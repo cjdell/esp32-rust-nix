@@ -23,6 +23,7 @@
           gnumake
           cmake
           ninja
+          libz
 
           git
           wget
@@ -42,7 +43,14 @@
           #! ${pkgs.stdenv.shell}
           espup install
           source ~/export-esp.sh
-          ${pkgs.stdenv.shell}
+
+          # Fix rust-analyzer by installing from the stable toolchain and forcing it into the PATH...
+          rustup component add --toolchain stable rust-analyzer
+          mkdir -p ~/rust-analyzer
+          ln -s $(rustup which --toolchain stable rust-analyzer) ~/rust-analyzer/rust-analyzer
+          export PATH=~/rust-analyzer:$PATH
+
+          bash
         '';
       };
     in
