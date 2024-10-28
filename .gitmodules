@@ -1,0 +1,3 @@
+[submodule "components/esp-picotts"]
+	path = components/esp-picotts
+	url = git@github.com:DiUS/esp-picotts.git
