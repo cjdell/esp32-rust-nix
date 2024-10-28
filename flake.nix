@@ -50,11 +50,11 @@
           # Fix rust-analyzer by installing from the stable toolchain and forcing it into the PATH...
           rustup component add --toolchain stable rust-analyzer
           mkdir -p ~/rust-analyzer
+          rm -f ~/rust-analyzer/rust-analyzer
           ln -s $(rustup which --toolchain stable rust-analyzer) ~/rust-analyzer/rust-analyzer
           mkdir -p ~/.config/rust-analyzer
-          export PATH=~/rust-analyzer:$PATH
 
-          zeditor --foreground .
+          PATH=~/rust-analyzer:$PATH zeditor --foreground .
         '';
       };
     in

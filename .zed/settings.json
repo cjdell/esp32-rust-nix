@@ -14,5 +14,10 @@
         "path": "rust-analyzer" // This should use the binary in the path which is overriden in the flake
       }
     }
+  },
+  "terminal": {
+    "shell": {
+      "program": "bash" // Needed to make the shell work properly. https://github.com/NixOS/nixpkgs/issues/27126
+    }
   }
 }
