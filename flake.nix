@@ -28,6 +28,7 @@
           git
           wget
           zed-editor
+          tio
 
           rustup
           espup

@@ -1,6 +1,9 @@
+use esp_idf_hal::spi;
+use esp_idf_hal::spi::SPI3;
 // use esp_idf_hal::{gpio::*, i2s::config::*, i2s::*, peripherals::*};
 use esp_idf_sys::*;
 use esp_idf_sys::{picotts_add, picotts_init};
+use mfrc522::Mfrc522;
 use std::ffi::c_void;
 use std::{ffi::CString, thread::sleep, time::Duration};
 
@@ -137,8 +140,13 @@ fn main() {
         picotts_init(TTS_PRI, Some(on_samples), TTS_CORE);
     }
 
-    speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
+    // speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
+    speak("System Online.".to_owned());
     sleep(Duration::from_secs(5));
+
+    unsafe {
+        card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
+    }
 
     let mut counter = 0;
 
@@ -159,6 +167,68 @@ fn main() {
                 RECV_BYTES
             );
         };
+    }
+}
+
+unsafe fn card_reader() -> Result<(), String> {
+    // let cs = PinDriver::output(esp_idf_hal::gpio::Gpio5::new()).unwrap();
+
+    let sclk = esp_idf_hal::gpio::Gpio7::new();
+    let sdo = esp_idf_hal::gpio::Gpio9::new(); // MOSI
+    let sdi = esp_idf_hal::gpio::Gpio8::new(); // MISO
+
+    let driver = spi::SpiDriver::new(
+        SPI3::new(),
+        sclk,
+        sdo,
+        Some(sdi),
+        &spi::config::DriverConfig {
+            dma: spi::Dma::Disabled,
+            intr_flags: enumset::EnumSet::new(),
+        },
+    )
+    .map_err(|err| format!("SpiDriver Error: {}", err))?;
+
+    // let spi_bus_driver = spi::SpiBusDriver::new(driver, &esp_idf_hal::spi::config::Config::new());
+
+    let spi_device_driver = spi::SpiDeviceDriver::new(
+        driver,
+        Some(esp_idf_hal::gpio::Gpio43::new()),
+        &esp_idf_hal::spi::config::Config::new(),
+    )
+    .map_err(|err| format!("SpiDeviceDriver Error: {}", err))?;
+
+    let itf = mfrc522::comm::blocking::spi::SpiInterface::new(spi_device_driver);
+
+    let mut mfrc522 = Mfrc522::new(itf).init().unwrap();
+
+    let vers = mfrc522
+        .version()
+        .map_err(|err| format!("mfrc522.version Error: {:?}", err))?;
+
+    println!("VERSION: 0x{:x}", vers);
+
+    loop {
+        if let Ok(atqa) = mfrc522.reqa() {
+            if let Ok(uid) = mfrc522.select(&atqa) {
+                let bytes = uid.as_bytes();
+
+                println!("UID: {:?}", uid.as_bytes());
+                println!("Number: {}", to_u32(bytes).unwrap_or_default());
+            }
+        }
+
+        sleep(Duration::from_millis(100));
+    }
+}
+
+fn to_u32(bytes: &[u8]) -> Option<u32> {
+    // Ensure the slice has exactly 4 bytes
+    if bytes.len() == 4 {
+        // Convert bytes to u32 assuming little-endian
+        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    } else {
+        None
     }
 }
 
