@@ -1,12 +1,12 @@
-use esp_idf_hal::{gpio::*, i2s::config::*, i2s::*, peripherals::*};
+// use esp_idf_hal::{gpio::*, i2s::config::*, i2s::*, peripherals::*};
 use esp_idf_sys::*;
 use esp_idf_sys::{picotts_add, picotts_init};
 use std::ffi::c_void;
 use std::{ffi::CString, thread::sleep, time::Duration};
 
-static mut i2s_tx_chan: i2s_chan_handle_t = (0 as *mut i2s_channel_obj_t) as i2s_chan_handle_t;
+static mut I2S_TX_CHAN: i2s_chan_handle_t = (0 as *mut i2s_channel_obj_t) as i2s_chan_handle_t;
 
-static mut ringbuf: RingbufHandle_t = (0 as RingbufHandle_t);
+static mut RING_BUF: RingbufHandle_t = 0 as RingbufHandle_t;
 
 const MAX_DELAY: u32 = 0xffffffff;
 const BUFFER_SIZE_SAMPLES: usize = 2048;
@@ -17,10 +17,10 @@ const TTS_PRI: u32 = 20;
 const I2S_CORE: i32 = 1;
 const I2S_PRI: u32 = 22;
 
-static mut sent_chunks: usize = 0;
-static mut sent_bytes: usize = 0;
-static mut recv_chunks: usize = 0;
-static mut recv_bytes: usize = 0;
+static mut SENT_CHUNKS: usize = 0;
+static mut SENT_BYTES: usize = 0;
+static mut RECV_CHUNKS: usize = 0;
+static mut RECV_BYTES: usize = 0;
 
 fn main() {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -31,9 +31,6 @@ fn main() {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     sleep(Duration::from_secs(3));
-
-    // let i2s_tx_chan: *mut i2s_chan_handle_t = 0 as *mut i2s_chan_handle_t;
-    // unsafe { i2s_tx_chan = (0 as *mut i2s_channel_obj_t) as i2s_chan_handle_t };
 
     // unsafe {
     //     let i2s_driver = I2sDriver::new_pdm_tx(
@@ -62,7 +59,7 @@ fn main() {
     unsafe {
         let null = 0 as *mut *mut i2s_channel_obj_t;
 
-        let ret = i2s_new_channel(&chan_cfg, &mut i2s_tx_chan, null);
+        let ret = i2s_new_channel(&chan_cfg, &raw mut I2S_TX_CHAN, null);
         if ret != ESP_OK {
             log::error!("i2s_new_channel failed");
         }
@@ -104,21 +101,21 @@ fn main() {
     };
 
     unsafe {
-        let ret = i2s_channel_init_pdm_tx_mode(i2s_tx_chan, &pdm_tx_cfg);
+        let ret = i2s_channel_init_pdm_tx_mode(I2S_TX_CHAN, &pdm_tx_cfg);
         if ret != ESP_OK {
             log::error!("i2s_channel_init_pdm_tx_mode failed");
         }
     }
 
     unsafe {
-        let ret = i2s_channel_enable(i2s_tx_chan);
+        let ret = i2s_channel_enable(I2S_TX_CHAN);
         if ret != ESP_OK {
             log::error!("i2s_channel_enable failed");
         }
     }
 
     unsafe {
-        ringbuf = xRingbufferCreate(
+        RING_BUF = xRingbufferCreate(
             BUFFER_SIZE_SAMPLES * std::mem::size_of::<i16>(),
             RingbufferType_t_RINGBUF_TYPE_BYTEBUF,
         );
@@ -156,10 +153,10 @@ fn main() {
         unsafe {
             log::info!(
                 "SENT:{}/{} RECV:{}/{}",
-                sent_chunks,
-                sent_bytes,
-                recv_chunks,
-                recv_bytes
+                SENT_CHUNKS,
+                SENT_BYTES,
+                RECV_CHUNKS,
+                RECV_BYTES
             );
         };
     }
@@ -183,21 +180,21 @@ fn speak(str: String) {
     }
 }
 
-unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
+unsafe extern "C" fn i2s_write_task(_param: *mut c_void) {
     let mut item_size: usize = 0;
 
     loop {
-        let buffer = xRingbufferReceive(ringbuf, &mut item_size, MAX_DELAY);
+        let buffer = xRingbufferReceive(RING_BUF, &mut item_size, MAX_DELAY);
 
-        if (buffer != 0 as *mut c_void) {
+        if buffer != 0 as *mut c_void {
             let mut bytes_written: usize = 0;
 
-            recv_chunks += 1;
-            recv_bytes += item_size;
+            RECV_CHUNKS += 1;
+            RECV_BYTES += item_size;
 
             // print!("O");
             let ret = i2s_channel_write(
-                i2s_tx_chan,
+                I2S_TX_CHAN,
                 buffer,
                 item_size,
                 &mut bytes_written,
@@ -207,7 +204,7 @@ unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
                 log::error!("i2s_channel_write failed");
             }
 
-            vRingbufferReturnItem(ringbuf, buffer);
+            vRingbufferReturnItem(RING_BUF, buffer);
 
             vTaskDelay(10);
         }
@@ -215,7 +212,7 @@ unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
 }
 
 unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
-    let factor = 3;
+    // let factor = 3;
     let length = length as usize;
 
     // // Convert the raw pointer to a slice for safer and more efficient access
@@ -239,15 +236,15 @@ unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
     let c_buffer = buffer as *const c_void;
     let bytes = length * std::mem::size_of::<i16>();
 
-    sent_chunks += 1;
-    sent_bytes += bytes;
+    SENT_CHUNKS += 1;
+    SENT_BYTES += bytes;
 
     // Send to the ring buffer
     // print!("I");
-    xRingbufferSend(ringbuf, c_buffer, bytes, MAX_DELAY);
+    xRingbufferSend(RING_BUF, c_buffer, bytes, MAX_DELAY);
 
     // Stops the watch guard timer from killing the task (I think...)
-    if sent_chunks % 100 == 0 {
+    if SENT_CHUNKS % 100 == 0 {
         vTaskDelay(1);
     }
 
