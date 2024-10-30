@@ -8,6 +8,20 @@ static mut i2s_tx_chan: i2s_chan_handle_t = (0 as *mut i2s_channel_obj_t) as i2s
 
 static mut ringbuf: RingbufHandle_t = (0 as RingbufHandle_t);
 
+const MAX_DELAY: u32 = 0xffffffff;
+const BUFFER_SIZE_SAMPLES: usize = 1024;
+
+const TTS_CORE: i32 = 1;
+const TTS_PRI: u32 = 20;
+
+const I2S_CORE: i32 = 1;
+const I2S_PRI: u32 = 22;
+
+static mut sent_chunks: usize = 0;
+static mut sent_bytes: usize = 0;
+static mut recv_chunks: usize = 0;
+static mut recv_bytes: usize = 0;
+
 fn main() {
     // It is necessary to call this function once. Otherwise some patches to the runtime
     // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
@@ -59,7 +73,7 @@ fn main() {
 
     let pdm_tx_cfg = i2s_pdm_tx_config_t {
         clk_cfg: i2s_pdm_tx_clk_config_t {
-            sample_rate_hz: 48000,
+            sample_rate_hz: 16000,
             clk_src: soc_periph_i2s_clk_src_t_I2S_CLK_SRC_DEFAULT,
             mclk_multiple: i2s_mclk_multiple_t_I2S_MCLK_MULTIPLE_256,
             up_sample_fp: 960,
@@ -104,51 +118,83 @@ fn main() {
     }
 
     unsafe {
-        picotts_init(10, Some(foo), 1);
-    }
+        ringbuf = xRingbufferCreate(
+            BUFFER_SIZE_SAMPLES * std::mem::size_of::<i16>(),
+            RingbufferType_t_RINGBUF_TYPE_BYTEBUF,
+        );
 
-    unsafe { ringbuf = xRingbufferCreate(1024 * 2, RingbufferType_t_RINGBUF_TYPE_BYTEBUF) };
+        let task_name = CString::new("I2SWriteTask").unwrap();
 
-    unsafe {
         xTaskCreatePinnedToCore(
             Some(i2s_write_task),
-            CString::new("I2SWriteTask").unwrap().as_ptr(),
+            task_name.as_ptr(),
             2048,
             (0) as *mut c_void,
-            1,
+            I2S_PRI,
             (0) as *mut TaskHandle_t,
-            1,
+            I2S_CORE,
         )
     };
 
-    loop {
-        log::info!("Hello, world!");
+    unsafe {
+        picotts_init(TTS_PRI, Some(on_samples), TTS_CORE);
+    }
 
+    speak("The quick brown fox jumped over the lazy dog.".to_owned());
+    sleep(Duration::from_secs(5));
+
+    let mut counter = 0;
+
+    loop {
+        speak(format!(
+            "Hello world. This is iteration number {}. Test.",
+            counter
+        ));
         sleep(Duration::from_secs(5));
+        counter += 1;
 
         unsafe {
-            let my_string = "Hello World.   ";
-            // Convert &str to CString
-            let c_string = CString::new(my_string).expect("CString::new failed");
-
-            // Convert CString to *const i8
-            let c_string_ptr: *const i8 = c_string.as_ptr();
-
-            picotts_add(c_string_ptr, 14);
-        }
+            log::info!(
+                "SENT:{}/{} RECV:{}/{}",
+                sent_chunks,
+                sent_bytes,
+                recv_chunks,
+                recv_bytes
+            );
+        };
     }
+}
+
+fn speak(str: String) {
+    let str = str + " "; // Won't start speaking until a space is seen after a full stop.
+
+    log::info!("{}", str);
+
+    let len = str.len() as u32;
+    let c_str = CString::new(str).unwrap();
+    unsafe { picotts_add(c_str.as_ptr(), len) };
 }
 
 unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
     let mut item_size: usize = 0;
 
     loop {
-        let buffer = xRingbufferReceive(ringbuf, &mut item_size, 100);
+        let buffer = xRingbufferReceive(ringbuf, &mut item_size, MAX_DELAY);
 
         if (buffer != 0 as *mut c_void) {
             let mut bytes_written: usize = 0;
 
-            let ret = i2s_channel_write(i2s_tx_chan, buffer, item_size, &mut bytes_written, 100);
+            recv_chunks += 1;
+            recv_bytes += item_size;
+
+            // print!("O");
+            let ret = i2s_channel_write(
+                i2s_tx_chan,
+                buffer,
+                item_size,
+                &mut bytes_written,
+                MAX_DELAY,
+            );
             if ret != ESP_OK {
                 log::error!("i2s_channel_write failed");
             }
@@ -156,41 +202,44 @@ unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
             vRingbufferReturnItem(ringbuf, buffer);
         }
 
-        vTaskDelay(1);
+        vTaskDelay(10);
     }
 }
 
 unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
-    // log::info!("{} ", length);
+    let factor = 3;
+    let length = length as usize;
 
-    let mut bytes_written: usize = 0;
+    // // Convert the raw pointer to a slice for safer and more efficient access
+    // let input_slice = std::slice::from_raw_parts(buffer, length);
 
-    let mut buffer2 = vec![0i16; (length * 3) as usize];
+    // // Create a new vector with the expanded size
+    // let mut stretched_buffer = vec![0i16; length * factor];
 
-    let mut b = buffer;
-    for i in 0..length {
-        buffer2[(i * 3 + 0) as usize] = *b;
-        buffer2[(i * 3 + 1) as usize] = *b;
-        buffer2[(i * 3 + 2) as usize] = *b;
+    // // Fill the stretched buffer by copying each sample `factor` times
+    // for (i, &sample) in input_slice.iter().enumerate() {
+    //     let start_idx = i * factor;
+    //     stretched_buffer[start_idx..start_idx + factor].fill(sample);
+    // }
 
-        b = b.wrapping_add(1);
-    }
+    // // Cast the stretched buffer to a *const c_void
+    // let c_buffer: *const c_void = stretched_buffer.as_ptr() as *const c_void;
 
-    // Get a raw pointer to the vector's data
-    let ptr: *const i16 = buffer2.as_ptr();
+    // // Calculate the number of bytes to send and update sent
+    // let bytes = stretched_buffer.len() * std::mem::size_of::<i16>();
 
-    // Cast the pointer to `*const c_void`
-    let c_void_ptr: *const c_void = ptr as *const c_void;
+    let c_buffer = buffer as *const c_void;
+    let bytes = length * std::mem::size_of::<i16>();
 
-    xRingbufferSend(ringbuf, c_void_ptr, (length * 3 * 2) as usize, 100);
+    sent_chunks += 1;
+    sent_bytes += bytes;
 
-    // let ret = i2s_channel_write(
-    //     i2s_tx_chan,
-    //     c_void_ptr,
-    //     (length * 3 * 2) as usize,
-    //     &mut bytes_written,
-    //     100,
-    // );
+    // Send to the ring buffer
+    // print!("I");
+    xRingbufferSend(ringbuf, c_buffer, bytes, MAX_DELAY);
+
+    // let mut bytes_written: usize = 0;
+    // let ret = i2s_channel_write(i2s_tx_chan, c_void_ptr, bytes, &mut bytes_written, 100);
     // if ret != ESP_OK {
     //     log::error!("i2s_channel_write failed");
     // }
