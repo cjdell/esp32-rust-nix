@@ -9,7 +9,7 @@ static mut i2s_tx_chan: i2s_chan_handle_t = (0 as *mut i2s_channel_obj_t) as i2s
 static mut ringbuf: RingbufHandle_t = (0 as RingbufHandle_t);
 
 const MAX_DELAY: u32 = 0xffffffff;
-const BUFFER_SIZE_SAMPLES: usize = 1024;
+const BUFFER_SIZE_SAMPLES: usize = 2048;
 
 const TTS_CORE: i32 = 1;
 const TTS_PRI: u32 = 20;
@@ -140,14 +140,14 @@ fn main() {
         picotts_init(TTS_PRI, Some(on_samples), TTS_CORE);
     }
 
-    speak("The quick brown fox jumped over the lazy dog.".to_owned());
+    speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
     sleep(Duration::from_secs(5));
 
     let mut counter = 0;
 
     loop {
         speak(format!(
-            "Hello world. This is iteration number {}. Test.",
+            "Hello world. This is iteration number {}.",
             counter
         ));
         sleep(Duration::from_secs(5));
@@ -166,13 +166,21 @@ fn main() {
 }
 
 fn speak(str: String) {
-    let str = str + " "; // Won't start speaking until a space is seen after a full stop.
+    let lines = str.split(".");
 
-    log::info!("{}", str);
+    for line in lines {
+        let line = line.trim().to_owned() + ". "; // Won't start speaking until a space is seen after a full stop.
 
-    let len = str.len() as u32;
-    let c_str = CString::new(str).unwrap();
-    unsafe { picotts_add(c_str.as_ptr(), len) };
+        log::info!("{}", line);
+
+        let len = line.len() as u32;
+        let c_str = CString::new(line).unwrap();
+
+        unsafe {
+            picotts_add(c_str.as_ptr(), len);
+            vTaskDelay(len * 100);
+        };
+    }
 }
 
 unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
@@ -200,9 +208,9 @@ unsafe extern "C" fn i2s_write_task(param: *mut c_void) {
             }
 
             vRingbufferReturnItem(ringbuf, buffer);
-        }
 
-        vTaskDelay(10);
+            vTaskDelay(10);
+        }
     }
 }
 
@@ -237,6 +245,11 @@ unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
     // Send to the ring buffer
     // print!("I");
     xRingbufferSend(ringbuf, c_buffer, bytes, MAX_DELAY);
+
+    // Stops the watch guard timer from killing the task (I think...)
+    if sent_chunks % 100 == 0 {
+        vTaskDelay(1);
+    }
 
     // let mut bytes_written: usize = 0;
     // let ret = i2s_channel_write(i2s_tx_chan, c_void_ptr, bytes, &mut bytes_written, 100);
