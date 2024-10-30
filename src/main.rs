@@ -1,10 +1,15 @@
-use esp_idf_hal::spi;
 use esp_idf_hal::spi::SPI3;
+use esp_idf_hal::{peripherals, spi};
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::nvs;
+use esp_idf_svc::wifi::{ClientConfiguration, Configuration, EspWifi};
 // use esp_idf_hal::{gpio::*, i2s::config::*, i2s::*, peripherals::*};
 use esp_idf_sys::*;
 use esp_idf_sys::{picotts_add, picotts_init};
 use mfrc522::Mfrc522;
 use std::ffi::c_void;
+use std::str::FromStr;
+use std::thread;
 use std::{ffi::CString, thread::sleep, time::Duration};
 
 static mut I2S_TX_CHAN: i2s_chan_handle_t = (0 as *mut i2s_channel_obj_t) as i2s_chan_handle_t;
@@ -144,23 +149,87 @@ fn main() {
     speak("System Online.".to_owned());
     sleep(Duration::from_secs(5));
 
-    unsafe {
-        card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
-    }
+    // let handle = thread::spawn(|| unsafe {
+    //     card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
+    // });
+
+    thread::Builder::new()
+        .stack_size(8192)
+        .name("Card Reader Thread".to_string())
+        .spawn(|| unsafe {
+            card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
+        })
+        .unwrap();
+
+    let event_loop = EspSystemEventLoop::take().unwrap();
+    let peripherals = peripherals::Peripherals::take().unwrap();
+    let nvs_default_partition = nvs::EspDefaultNvsPartition::take().unwrap();
+
+    let mut wifi =
+        EspWifi::new(peripherals.modem, event_loop, Some(nvs_default_partition)).unwrap();
+
+    wifi.start().unwrap();
+
+    // speak("Searching for WiFi networks.".to_owned());
+
+    // let scan_result = wifi.scan().unwrap();
+
+    // sleep(Duration::from_secs(2));
+
+    // speak("WiFi networks detected.".to_owned());
+
+    // let mut i = 0;
+    // for line in scan_result {
+    //     speak(format!(
+    //         "{}, signal strength {}.",
+    //         line.ssid, line.signal_strength
+    //     ));
+    //     i += 1;
+    //     if i == 3 {
+    //         break;
+    //     };
+    // }
+
+    let client_config = ClientConfiguration {
+        ssid: heapless::String::from_str("Leighhack").unwrap(),
+        password: heapless::String::from_str("caffeine1234").unwrap(),
+        ..Default::default()
+    };
+
+    wifi.set_configuration(&Configuration::Client(client_config))
+        .unwrap();
+
+    speak("Connecting.".to_owned());
+
+    wifi.connect().unwrap();
+
+    sleep(Duration::from_secs(5));
+
+    speak("Connected.".to_owned());
+
+    let ip_info = wifi.sta_netif().get_ip_info();
+
+    let ip = ip_info.ok().map(|i| i.ip);
+
+    speak(format!(
+        "IP address: {}.",
+        ip.unwrap().to_string().replace(".", " dot ")
+    ));
 
     let mut counter = 0;
 
     loop {
-        speak(format!(
-            "Hello world. This is iteration number {}.",
-            counter
-        ));
+        // speak(format!(
+        //     "Hello world. This is iteration number {}.",
+        //     counter
+        // ));
         sleep(Duration::from_secs(5));
         counter += 1;
 
         unsafe {
             log::info!(
-                "SENT:{}/{} RECV:{}/{}",
+                "Counter: {} SENT:{}/{} RECV:{}/{}",
+                counter,
                 SENT_CHUNKS,
                 SENT_BYTES,
                 RECV_CHUNKS,
@@ -215,10 +284,15 @@ unsafe fn card_reader() -> Result<(), String> {
 
                 println!("UID: {:?}", uid.as_bytes());
                 println!("Number: {}", to_u32(bytes).unwrap_or_default());
+
+                speak(format!("Card {}.", to_u32(bytes).unwrap_or_default()));
+
+                // Don't spam
+                sleep(Duration::from_secs(3));
             }
         }
 
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(250));
     }
 }
 
