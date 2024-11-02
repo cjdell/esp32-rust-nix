@@ -1,27 +1,23 @@
 mod audio;
 mod common;
+mod wifi;
 
-use audio::{RECV_BYTES, RECV_CHUNKS};
+use anyhow::Result;
 use esp_idf_hal::{
     gpio::PinDriver,
     peripherals,
     spi::{self, SPI3},
 };
-use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
-    nvs,
-    wifi::{ClientConfiguration, Configuration, EspWifi},
-};
-use esp_idf_sys::{
-    picotts_add, picotts_init, touch_pad_config, touch_pad_init, vTaskDelay, xRingbufferSend,
-};
+use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
+use esp_idf_sys::{picotts_add, picotts_init, vTaskDelay, xRingbufferSend};
+use log::{error, info};
 use mfrc522::Mfrc522;
 use std::{
     ffi::{c_void, CString},
-    str::FromStr,
     thread::{self, sleep},
     time::Duration,
 };
+use wifi::WifiConnection;
 
 const TTS_CORE: i32 = 1;
 const TTS_PRI: u32 = 20;
@@ -37,7 +33,28 @@ fn main() {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    esp_idf_svc::io::vfs::initialize_eventfd(1).expect("Failed to initialize eventfd");
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build Tokio runtime");
+
+    match rt.block_on(async { async_main().await }) {
+        Ok(()) => info!("main() finished, reboot."),
+        Err(err) => {
+            error!("{err:?}");
+            // Let them read the error message before rebooting
+            sleep(std::time::Duration::from_secs(3));
+        }
+    }
+
+    esp_idf_hal::reset::restart();
+}
+
+async fn async_main() -> Result<()> {
     sleep(Duration::from_secs(3));
+    info!("Starting async_main.");
 
     audio::init_audio();
 
@@ -70,13 +87,14 @@ fn main() {
         .unwrap();
 
     let event_loop = EspSystemEventLoop::take().unwrap();
+    let timer = EspTaskTimerService::new()?;
     let peripherals = peripherals::Peripherals::take().unwrap();
     let nvs_default_partition = nvs::EspDefaultNvsPartition::take().unwrap();
 
-    let mut wifi =
-        EspWifi::new(peripherals.modem, event_loop, Some(nvs_default_partition)).unwrap();
+    // let mut wifi =
+    //     EspWifi::new(peripherals.modem, event_loop, Some(nvs_default_partition)).unwrap();
 
-    wifi.start().unwrap();
+    // wifi.start().unwrap();
 
     // speak("Searching for WiFi networks.".to_owned());
 
@@ -98,60 +116,73 @@ fn main() {
     //     };
     // }
 
-    let client_config = ClientConfiguration {
-        ssid: heapless::String::from_str("Leighhack").unwrap(),
-        password: heapless::String::from_str("caffeine1234").unwrap(),
-        ..Default::default()
-    };
+    // let client_config = ClientConfiguration {
+    //     ssid: heapless::String::from_str("Leighhack").unwrap(),
+    //     password: heapless::String::from_str("caffeine1234").unwrap(),
+    //     ..Default::default()
+    // };
 
-    wifi.set_configuration(&Configuration::Client(client_config))
-        .unwrap();
+    // wifi.set_configuration(&Configuration::Client(client_config))
+    //     .unwrap();
 
-    speak("Connecting.".to_owned());
+    // speak("Connecting.".to_owned());
 
-    wifi.connect().unwrap();
+    // wifi.connect().unwrap();
 
-    sleep(Duration::from_secs(5));
+    // sleep(Duration::from_secs(5));
 
-    speak("Connected.".to_owned());
+    // speak("Connected.".to_owned());
 
-    let ip_info = wifi.sta_netif().get_ip_info();
+    // let ip_info = wifi.sta_netif().get_ip_info();
 
-    let ip = ip_info.ok().map(|i| i.ip);
+    // let ip = ip_info.ok().map(|i| i.ip);
 
-    speak(format!(
-        "IP address: {}.",
-        ip.unwrap().to_string().replace(".", " dot ")
-    ));
+    // speak(format!(
+    //     "IP address: {}.",
+    //     ip.unwrap().to_string().replace(".", " dot ")
+    // ));
 
-    let mut counter = 0;
+    // Initialize the network stack, this must be done before starting the server
+    let mut wifi_connection = WifiConnection::new(
+        peripherals.modem,
+        event_loop,
+        timer,
+        Some(nvs_default_partition),
+    )
+    .await?;
 
-    loop {
-        // speak(format!(
-        //     "Hello world. This is iteration number {}.",
-        //     counter
-        // ));
-        sleep(Duration::from_secs(5));
-        counter += 1;
+    tokio::try_join!(
+        // run_server(wifi_connection.state.clone()),
+        wifi_connection.connect()
+    )?;
 
-        unsafe {
-            log::info!(
-                "Counter: {} SENT:{}/{} RECV:{}/{}",
-                counter,
-                SENT_CHUNKS,
-                SENT_BYTES,
-                RECV_CHUNKS,
-                RECV_BYTES
-            );
-        };
-    }
+    Ok(())
+
+    // let mut counter = 0;
+
+    // loop {
+    //     // speak(format!(
+    //     //     "Hello world. This is iteration number {}.",
+    //     //     counter
+    //     // ));
+    //     sleep(Duration::from_secs(5));
+    //     counter += 1;
+
+    //     unsafe {
+    //         log::info!(
+    //             "Counter: {} SENT:{}/{} RECV:{}/{}",
+    //             counter,
+    //             SENT_CHUNKS,
+    //             SENT_BYTES,
+    //             RECV_CHUNKS,
+    //             RECV_BYTES
+    //         );
+    //     };
+    // }
 }
 
 unsafe fn detect_touch() {
     let touch = PinDriver::input(esp_idf_hal::gpio::Gpio1::new()).unwrap();
-
-    touch_pad_init();
-    touch_pad_config(1);
 
     loop {
         if touch.is_high() {
