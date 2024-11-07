@@ -3,6 +3,7 @@ mod common;
 mod wifi;
 
 use anyhow::Result;
+use audio::write_samples_directly;
 use esp_idf_hal::{
     gpio::PinDriver,
     peripherals,
@@ -280,6 +281,8 @@ fn speak(str: String) {
 unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
     // let factor = 3;
     let length = length as usize;
+
+    // write_samples_directly(buffer, length);
 
     // // Convert the raw pointer to a slice for safer and more efficient access
     // let input_slice = std::slice::from_raw_parts(buffer, length);

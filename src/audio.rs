@@ -140,10 +140,33 @@ unsafe extern "C" fn i2s_write_task(_param: *mut c_void) {
             if ret != ESP_OK {
                 log::error!("i2s_channel_write failed");
             }
+            if bytes_written != item_size {
+                log::warn!("i2s_channel_write truncated");
+            }
 
             vRingbufferReturnItem(RING_BUF, buffer);
 
             vTaskDelay(10);
         }
+    }
+}
+
+pub unsafe fn write_samples_directly(buffer: *mut i16, sample_count: usize) {
+    let mut bytes_written: usize = 0;
+
+    let bytes_to_write = sample_count * std::mem::size_of::<i16>();
+
+    let ret = i2s_channel_write(
+        I2S_TX_CHAN,
+        buffer as *mut c_void,
+        bytes_to_write,
+        &mut bytes_written,
+        MAX_DELAY,
+    );
+    if ret != ESP_OK {
+        log::error!("i2s_channel_write failed");
+    }
+    if bytes_written != bytes_to_write {
+        log::warn!("i2s_channel_write truncated");
     }
 }
