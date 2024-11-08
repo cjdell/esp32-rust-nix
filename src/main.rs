@@ -58,8 +58,6 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let rfid_service = RfidService::new(speech_service);
 
-    rfid_service.run()?;
-
     thread::Builder::new()
         .stack_size(8192)
         .name("Touch Thread".to_string())
@@ -135,7 +133,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     tokio::try_join!(
         // run_server(wifi_connection.state.clone()),
-        wifi_connection.connect()
+        wifi_connection.connect(),
+        rfid_service.run(),
     )?;
 
     Ok(())
