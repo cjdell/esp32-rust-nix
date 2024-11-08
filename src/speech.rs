@@ -1,4 +1,7 @@
-use crate::{audio, common};
+use crate::{
+    audio::{self, AudioService},
+    common,
+};
 use esp_idf_sys::{picotts_add, picotts_init, vTaskDelay, xRingbufferSend};
 use std::ffi::{c_void, CString};
 
@@ -9,15 +12,17 @@ static mut SENT_CHUNKS: usize = 0;
 static mut SENT_BYTES: usize = 0;
 
 #[derive(Copy, Clone)]
-pub struct SpeechService {}
+pub struct SpeechService {
+    audio_service: AudioService,
+}
 
 impl SpeechService {
-    pub fn new() -> SpeechService {
+    pub fn new(audio_service: AudioService) -> SpeechService {
         unsafe {
             picotts_init(TTS_PRI, Some(SpeechService::on_samples), TTS_CORE);
         }
 
-        SpeechService {}
+        SpeechService { audio_service }
     }
 
     pub fn speak(&self, str: String) {
@@ -42,7 +47,7 @@ impl SpeechService {
         // let factor = 3;
         let length = length as usize;
 
-        // write_samples_directly(buffer, length);
+        // AudioService::write_samples_directly(buffer, length);
 
         // // Convert the raw pointer to a slice for safer and more efficient access
         // let input_slice = std::slice::from_raw_parts(buffer, length);

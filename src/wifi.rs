@@ -18,6 +18,7 @@ use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 
 use crate::common;
+use crate::speech::SpeechService;
 
 // Shared state of the Wi-Fi connection.
 pub struct WifiState {
@@ -36,6 +37,7 @@ impl WifiState {
 pub struct WifiConnection<'a> {
     pub state: Arc<WifiState>,
     wifi: AsyncWifi<EspWifi<'a>>,
+    speech_service: SpeechService,
 }
 
 impl<'a> WifiConnection<'a> {
@@ -45,6 +47,7 @@ impl<'a> WifiConnection<'a> {
         event_loop: EspEventLoop<System>,
         timer: EspTimerService<Task>,
         default_partition: Option<EspDefaultNvsPartition>,
+        speech_service: SpeechService,
         // config: &Config,
     ) -> Result<Self> {
         info!("Initializing...");
@@ -88,13 +91,18 @@ impl<'a> WifiConnection<'a> {
         wifi.start().await?;
 
         info!("Wi-Fi driver started successfully.");
-        Ok(Self { state, wifi })
+        Ok(Self {
+            state,
+            wifi,
+            speech_service,
+        })
     }
 
     // Connect to Wi-Fi and stay connected. This function will loop forever.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         loop {
-            info!("Connecting to SSID '{}'...", self.state.ssid);
+            self.log(format!("Connecting to WiFi network '{}'", self.state.ssid));
+
             if let Err(err) = self.wifi.connect().await {
                 warn!("Connection failed: {err:?}");
                 self.wifi.disconnect().await?;
@@ -102,14 +110,15 @@ impl<'a> WifiConnection<'a> {
                 continue;
             }
 
-            info!("Acquiring IP address...");
+            self.log(format!("Acquiring IP address"));
+
             let timeout = Some(Duration::from_secs(10));
             if let Err(err) = self
                 .wifi
                 .ip_wait_while(|w| w.is_up().map(|s| !s), timeout)
                 .await
             {
-                warn!("IP association failed: {err:?}");
+                self.log(format!("IP association failed: {err:?}"));
                 self.wifi.disconnect().await?;
                 sleep(Duration::from_secs(1)).await;
                 continue;
@@ -117,11 +126,19 @@ impl<'a> WifiConnection<'a> {
 
             let ip_info = self.wifi.wifi().sta_netif().get_ip_info();
             *self.state.ip_addr.write().await = ip_info.ok().map(|i| i.ip);
-            info!("Connected to '{}': {ip_info:#?}", self.state.ssid);
+
+            self.log(format!(
+                "IP address {}",
+                self.state.ip_addr().await.unwrap()
+            ));
 
             // Wait for Wi-Fi to be down
             self.wifi.wifi_wait(|w| w.is_up(), None).await?;
-            warn!("Wi-Fi disconnected.");
+            self.log(format!("Wi-Fi disconnected"));
         }
+    }
+
+    fn log(&self, str: String) {
+        self.speech_service.speak(str.replace(".", " dot ") + ".");
     }
 }
