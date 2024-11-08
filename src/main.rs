@@ -1,30 +1,20 @@
 mod audio;
 mod common;
+mod rfid;
+mod speech;
 mod wifi;
 
-use anyhow::Result;
-use audio::write_samples_directly;
-use esp_idf_hal::{
-    gpio::PinDriver,
-    peripherals,
-    spi::{self, SPI3},
-};
+use esp_idf_hal::{gpio::PinDriver, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
-use esp_idf_sys::{picotts_add, picotts_init, vTaskDelay, xRingbufferSend};
 use log::{error, info};
-use mfrc522::Mfrc522;
+use rfid::RfidService;
+use speech::SpeechService;
 use std::{
-    ffi::{c_void, CString},
+    error::Error,
     thread::{self, sleep},
     time::Duration,
 };
 use wifi::WifiConnection;
-
-const TTS_CORE: i32 = 1;
-const TTS_PRI: u32 = 20;
-
-static mut SENT_CHUNKS: usize = 0;
-static mut SENT_BYTES: usize = 0;
 
 fn main() {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -53,37 +43,28 @@ fn main() {
     esp_idf_hal::reset::restart();
 }
 
-async fn async_main() -> Result<()> {
+async fn async_main() -> Result<(), Box<dyn Error>> {
     sleep(Duration::from_secs(3));
     info!("Starting async_main.");
 
     audio::init_audio();
 
-    unsafe {
-        picotts_init(TTS_PRI, Some(on_samples), TTS_CORE);
-    }
+    let speech_service = SpeechService::new();
 
     // speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
-    speak("System Online.".to_owned());
+    speech_service.speak("System Online.".to_owned());
+
     sleep(Duration::from_secs(5));
 
-    // let handle = thread::spawn(|| unsafe {
-    //     card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
-    // });
+    let rfid_service = RfidService::new(speech_service);
 
-    thread::Builder::new()
-        .stack_size(8192)
-        .name("Card Reader Thread".to_string())
-        .spawn(|| unsafe {
-            card_reader().unwrap_or_else(|err| println!("card_reader: {}", err));
-        })
-        .unwrap();
+    rfid_service.run()?;
 
     thread::Builder::new()
         .stack_size(8192)
         .name("Touch Thread".to_string())
-        .spawn(|| unsafe {
-            detect_touch();
+        .spawn(move || unsafe {
+            detect_touch(&speech_service);
         })
         .unwrap();
 
@@ -158,168 +139,17 @@ async fn async_main() -> Result<()> {
     )?;
 
     Ok(())
-
-    // let mut counter = 0;
-
-    // loop {
-    //     // speak(format!(
-    //     //     "Hello world. This is iteration number {}.",
-    //     //     counter
-    //     // ));
-    //     sleep(Duration::from_secs(5));
-    //     counter += 1;
-
-    //     unsafe {
-    //         log::info!(
-    //             "Counter: {} SENT:{}/{} RECV:{}/{}",
-    //             counter,
-    //             SENT_CHUNKS,
-    //             SENT_BYTES,
-    //             RECV_CHUNKS,
-    //             RECV_BYTES
-    //         );
-    //     };
-    // }
 }
 
-unsafe fn detect_touch() {
+unsafe fn detect_touch(speech_service: &SpeechService) {
     let touch = PinDriver::input(esp_idf_hal::gpio::Gpio1::new()).unwrap();
 
     loop {
         if touch.is_high() {
-            speak("Touch.".to_owned());
+            speech_service.speak("Touch.".to_owned());
             sleep(Duration::from_secs(1));
         }
 
         sleep(Duration::from_millis(10));
     }
-}
-
-unsafe fn card_reader() -> Result<(), String> {
-    let sclk = esp_idf_hal::gpio::Gpio7::new();
-    let sdo = esp_idf_hal::gpio::Gpio9::new(); // MOSI
-    let sdi = esp_idf_hal::gpio::Gpio8::new(); // MISO
-
-    let driver = spi::SpiDriver::new(
-        SPI3::new(),
-        sclk,
-        sdo,
-        Some(sdi),
-        &spi::config::DriverConfig {
-            dma: spi::Dma::Disabled,
-            intr_flags: enumset::EnumSet::new(),
-        },
-    )
-    .map_err(|err| format!("SpiDriver Error: {}", err))?;
-
-    // let spi_bus_driver = spi::SpiBusDriver::new(driver, &esp_idf_hal::spi::config::Config::new());
-
-    let spi_device_driver = spi::SpiDeviceDriver::new(
-        driver,
-        Some(esp_idf_hal::gpio::Gpio43::new()),
-        &esp_idf_hal::spi::config::Config::new(),
-    )
-    .map_err(|err| format!("SpiDeviceDriver Error: {}", err))?;
-
-    let itf = mfrc522::comm::blocking::spi::SpiInterface::new(spi_device_driver);
-
-    let mut mfrc522 = Mfrc522::new(itf).init().unwrap();
-
-    let vers = mfrc522
-        .version()
-        .map_err(|err| format!("mfrc522.version Error: {:?}", err))?;
-
-    println!("VERSION: 0x{:x}", vers);
-
-    loop {
-        if let Ok(atqa) = mfrc522.reqa() {
-            if let Ok(uid) = mfrc522.select(&atqa) {
-                let bytes = uid.as_bytes();
-
-                println!("UID: {:?}", uid.as_bytes());
-                println!("Number: {}", to_u32(bytes).unwrap_or_default());
-
-                speak(format!("Card {}.", to_u32(bytes).unwrap_or_default()));
-
-                // Don't spam
-                sleep(Duration::from_secs(3));
-            }
-        }
-
-        sleep(Duration::from_millis(100));
-    }
-}
-
-fn to_u32(bytes: &[u8]) -> Option<u32> {
-    // Ensure the slice has exactly 4 bytes
-    if bytes.len() == 4 {
-        // Convert bytes to u32 assuming little-endian
-        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-    } else {
-        None
-    }
-}
-
-fn speak(str: String) {
-    let lines = str.split(".");
-
-    for line in lines {
-        let line = line.trim().to_owned() + ". "; // Won't start speaking until a space is seen after a full stop.
-
-        log::info!("{}", line);
-
-        let len = line.len() as u32;
-        let c_str = CString::new(line).unwrap();
-
-        unsafe {
-            picotts_add(c_str.as_ptr(), len);
-            vTaskDelay(len * 100);
-        };
-    }
-}
-
-unsafe extern "C" fn on_samples(buffer: *mut i16, length: u32) {
-    // let factor = 3;
-    let length = length as usize;
-
-    // write_samples_directly(buffer, length);
-
-    // // Convert the raw pointer to a slice for safer and more efficient access
-    // let input_slice = std::slice::from_raw_parts(buffer, length);
-
-    // // Create a new vector with the expanded size
-    // let mut stretched_buffer = vec![0i16; length * factor];
-
-    // // Fill the stretched buffer by copying each sample `factor` times
-    // for (i, &sample) in input_slice.iter().enumerate() {
-    //     let start_idx = i * factor;
-    //     stretched_buffer[start_idx..start_idx + factor].fill(sample);
-    // }
-
-    // // Cast the stretched buffer to a *const c_void
-    // let c_buffer: *const c_void = stretched_buffer.as_ptr() as *const c_void;
-
-    // // Calculate the number of bytes to send and update sent
-    // let bytes = stretched_buffer.len() * std::mem::size_of::<i16>();
-
-    let c_buffer = buffer as *const c_void;
-    let bytes = length * std::mem::size_of::<i16>();
-
-    SENT_CHUNKS += 1;
-    SENT_BYTES += bytes;
-
-    // Send to the ring buffer
-    // print!("I");
-    xRingbufferSend(audio::RING_BUF, c_buffer, bytes, common::MAX_DELAY);
-
-    // Stops the watch guard timer from killing the task (I think...)
-    if SENT_CHUNKS % 100 == 0 {
-        vTaskDelay(1);
-    }
-
-    // let mut bytes_written: usize = 0;
-    // let ret = i2s_channel_write(i2s_tx_chan, c_void_ptr, bytes, &mut bytes_written, 100);
-    // if ret != ESP_OK {
-    //     log::error!("i2s_channel_write failed");
-    // }
 }
