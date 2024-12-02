@@ -5,16 +5,17 @@ use esp_idf_hal::{
 };
 use mfrc522::Mfrc522;
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::{sync::mpsc::Sender, time::sleep};
 
-#[derive(Copy, Clone)]
+// #[derive(Copy, Clone)]
 pub struct RfidService {
     speech_service: SpeechService,
+    tx: Sender<u32>,
 }
 
 impl RfidService {
-    pub fn new(speech_service: SpeechService) -> RfidService {
-        RfidService { speech_service }
+    pub fn new(speech_service: SpeechService, tx: Sender<u32>) -> RfidService {
+        RfidService { speech_service, tx }
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -59,8 +60,11 @@ impl RfidService {
                     println!("UID: {:?}", uid.as_bytes());
                     println!("Number: {}", to_u32(bytes).unwrap_or_default());
 
-                    self.speech_service
-                        .speak(format!("Card {}.", to_u32(bytes).unwrap_or_default()));
+                    let code = to_u32(bytes).unwrap_or_default();
+
+                    self.speech_service.speak(format!("Card {}.", code));
+
+                    self.tx.send(code).await?;
 
                     // Don't spam
                     sleep(Duration::from_secs(3)).await;

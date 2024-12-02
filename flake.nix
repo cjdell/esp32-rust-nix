@@ -3,15 +3,16 @@
 {
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs =
-    { self
-    , nixpkgs
-    }:
+    { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+
     let
       pkgs = import nixpkgs {
-        system = "x86_64-linux";
+        inherit system;
       };
       fhs = pkgs.buildFHSUserEnv {
         name = "fhs-shell";
@@ -29,6 +30,7 @@
           wget
           zed-editor
           tio
+          nushell
 
           rustup
           espup
@@ -39,10 +41,14 @@
           python3Packages.pip
           python3Packages.virtualenv
           ldproxy
+
+          deno
         ];
 
         runScript = pkgs.writeScript "run.sh" ''
           #! ${pkgs.stdenv.shell}
+          #set -euxo pipefail
+
           espup install
           source ~/export-esp.sh
 
@@ -56,57 +62,13 @@
           mkdir -p ~/.config/rust-analyzer
 
           PATH=~/rust-analyzer:$PATH zeditor --foreground .
+          # PATH=~/rust-analyzer:$PATH code .
+
+          # ${pkgs.nushell}/bin/nu
         '';
       };
     in
     {
-      devShells.${pkgs.system}.default = fhs.env;
-    };
+      devShell = fhs.env;
+    });
 }
-
-# {
-#   inputs = {
-#     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-#     nixpkgs-esp-dev = {
-#       url = "github:mirrexagon/nixpkgs-esp-dev";
-#       inputs.nixpkgs.follows = "nixpkgs";
-#       # inputs.flake-utils.follows = "flake-utils";
-#     };
-#     esp32 = {
-#       url = "github:svelterust/esp32";
-#       inputs.nixpkgs.follows = "nixpkgs";
-#     };
-#   };
-
-#   outputs = {
-#     self,
-#     nixpkgs,
-#     nixpkgs-esp-dev,
-#     esp32,
-#   }: let
-#     system = "x86_64-linux";
-#     pkgs = import nixpkgs {
-#         inherit system;
-#         overlays = [ (import "${nixpkgs-esp-dev}/overlay.nix") ];
-#     };
-#     idf-rust = esp32.packages.${system}.esp32;
-#   in {
-#     devShells.${system}.default = pkgs.mkShell {
-#       buildInputs = [
-#         pkgs.esp-idf-full
-#         idf-rust
-#         pkgs.tio
-#         pkgs.openssl
-#       ];
-
-#       nativeBuildInputs = [ pkgs.pkg-config ];
-
-#       LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.openssl ];
-
-#       shellHook = ''
-#         export PATH="${idf-rust}/.rustup/toolchains/esp/bin:$PATH"
-#         export RUST_SRC_PATH="$(rustc --print sysroot)/lib/rustlib/src/rust/src"
-#       '';
-#     };
-#   };
-# }

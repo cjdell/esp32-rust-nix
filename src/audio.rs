@@ -1,10 +1,7 @@
 use crate::common;
 use common::MAX_DELAY;
 use esp_idf_sys::*;
-use std::{
-    ffi::{c_void, CString},
-    ptr,
-};
+use std::ffi::{c_void, CString};
 
 const BUFFER_SIZE_SAMPLES: usize = 16000;
 const I2S_CORE: i32 = 1;
@@ -69,14 +66,14 @@ impl AudioService {
                 hp_scale: i2s_pdm_sig_scale_t_I2S_PDM_SIG_SCALING_DIV_2,
                 lp_scale: i2s_pdm_sig_scale_t_I2S_PDM_SIG_SCALING_MUL_1,
                 sinc_scale: i2s_pdm_sig_scale_t_I2S_PDM_SIG_SCALING_MUL_1,
-                line_mode: i2s_pdm_tx_line_mode_t_I2S_PDM_TX_ONE_LINE_CODEC,
+                line_mode: i2s_pdm_tx_line_mode_t_I2S_PDM_TX_ONE_LINE_DAC,
                 hp_en: true,
                 hp_cut_off_freq_hz: 35.5,
                 sd_dither: 0,
                 sd_dither2: 1,
             },
             gpio_cfg: i2s_pdm_tx_gpio_config_t {
-                clk: gpio_num_t_GPIO_NUM_45,
+                clk: gpio_num_t_GPIO_NUM_6,
                 dout: gpio_num_t_GPIO_NUM_44,
                 dout2: 0,
                 invert_flags,
@@ -151,7 +148,7 @@ impl AudioService {
 
                 unsafe { vRingbufferReturnItem(RING_BUF, buffer) };
 
-                unsafe { vTaskDelay(10) };
+                unsafe { vTaskDelay(25) };
             }
         }
     }

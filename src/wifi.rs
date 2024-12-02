@@ -101,7 +101,7 @@ impl<'a> WifiConnection<'a> {
     // Connect to Wi-Fi and stay connected. This function will loop forever.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         loop {
-            self.log(format!("Connecting to WiFi network '{}'", self.state.ssid));
+            // self.log(format!("Connecting to WiFi network '{}'", self.state.ssid));
 
             if let Err(err) = self.wifi.connect().await {
                 warn!("Connection failed: {err:?}");
@@ -110,7 +110,7 @@ impl<'a> WifiConnection<'a> {
                 continue;
             }
 
-            self.log(format!("Acquiring IP address"));
+            // self.log(format!("Acquiring IP address"));
 
             let timeout = Some(Duration::from_secs(10));
             if let Err(err) = self
