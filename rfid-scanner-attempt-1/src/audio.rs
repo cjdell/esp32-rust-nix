@@ -51,26 +51,72 @@ impl AudioService {
     }
 
     fn init(&self) {
-        // let chan_cfg = i2s_chan_config_t {
-        //     id: i2s_port_t_I2S_NUM_0,
-        //     role: i2s_role_t_I2S_ROLE_MASTER,
-        //     dma_desc_num: 6,
-        //     dma_frame_num: 240,
-        //     auto_clear: false,
-        //     intr_priority: 0,
-        // };
+        let chan_cfg = i2s_chan_config_t {
+            id: i2s_port_t_I2S_NUM_0,
+            role: i2s_role_t_I2S_ROLE_MASTER,
+            dma_desc_num: 6,
+            dma_frame_num: 240,
+            auto_clear: false,
+            intr_priority: 0,
+        };
 
-        // unsafe {
-        //     let null = 0 as *mut *mut i2s_channel_obj_t;
+        unsafe {
+            let null = 0 as *mut *mut i2s_channel_obj_t;
 
-        //     let ret = i2s_new_channel(&chan_cfg, &raw mut I2S_TX_CHAN, null);
-        //     if ret != ESP_OK {
-        //         log::error!("i2s_new_channel failed");
-        //     }
-        // }
+            let ret = i2s_new_channel(&chan_cfg, &raw mut I2S_TX_CHAN, null);
+            if ret != ESP_OK {
+                log::error!("i2s_new_channel failed");
+            }
+        }
 
-        // let mut invert_flags = i2s_pdm_tx_gpio_config_t__bindgen_ty_1::default();
-        // invert_flags.set_clk_inv(0);
+        let mut invert_flags = i2s_pdm_tx_gpio_config_t__bindgen_ty_1::default();
+        invert_flags.set_clk_inv(0);
+
+        let tdm_tx_cfg = i2s_tdm_config_t {
+            clk_cfg: i2s_tdm_clk_config_t {
+                sample_rate_hz: 16000,
+                clk_src: soc_periph_i2s_clk_src_t_I2S_CLK_SRC_DEFAULT,
+                mclk_multiple: i2s_mclk_multiple_t_I2S_MCLK_MULTIPLE_256,
+                ext_clk_freq_hz: 0,
+                bclk_div: 8,
+            },
+            slot_cfg: i2s_tdm_slot_config_t {
+                big_endian: false,
+                bit_order_lsb: false,
+                bit_shift: true,
+                data_bit_width: 16,
+                left_align: false,
+                skip_mask: false,
+                slot_bit_width: 16,
+                slot_mask: i2s_tdm_slot_mask_t_I2S_TDM_SLOT0,
+                slot_mode: i2s_slot_mode_t_I2S_SLOT_MODE_MONO,
+                total_slot: I2S_TDM_AUTO_SLOT_NUM,
+                ws_pol: false,
+                ws_width: I2S_TDM_AUTO_WS_WIDTH,
+            },
+            gpio_cfg: i2s_tdm_gpio_config_t {
+                mclk: esp_idf_sys::I2S_PIN_NO_CHANGE,
+                bclk: gpio_num_t_GPIO_NUM_6,
+                din: esp_idf_sys::I2S_PIN_NO_CHANGE,
+                dout: gpio_num_t_GPIO_NUM_44,
+                invert_flags: i2s_tdm_gpio_config_t__bindgen_ty_1::default(),
+                ws: gpio_num_t_GPIO_NUM_5,
+            },
+        };
+
+        unsafe {
+            let ret = i2s_channel_init_tdm_mode(I2S_TX_CHAN, &tdm_tx_cfg);
+            if ret != ESP_OK {
+                log::error!("i2s_channel_init_pdm_tx_mode failed");
+            }
+        }
+
+        unsafe {
+            let ret = i2s_channel_enable(I2S_TX_CHAN);
+            if ret != ESP_OK {
+                log::error!("i2s_channel_enable failed");
+            }
+        }
 
         // let pdm_tx_cfg = i2s_pdm_tx_config_t {
         //     clk_cfg: i2s_pdm_tx_clk_config_t {
@@ -143,49 +189,49 @@ impl AudioService {
         const SAMPLE_RATE: u32 = 16000;
         const CHANNEL_COUNT: u16 = 1;
 
-        let config = esp_idf_sys::i2s_driver_config_t {
-            mode: esp_idf_sys::i2s_mode_t_I2S_MODE_MASTER | esp_idf_sys::i2s_mode_t_I2S_MODE_TX,
-            sample_rate: SAMPLE_RATE,
-            bits_per_sample: esp_idf_sys::i2s_bits_per_chan_t_I2S_BITS_PER_CHAN_16BIT,
-            channel_format: esp_idf_sys::i2s_channel_fmt_t_I2S_CHANNEL_FMT_ONLY_RIGHT,
-            communication_format: esp_idf_sys::i2s_comm_format_t_I2S_COMM_FORMAT_STAND_I2S,
-            intr_alloc_flags: esp_idf_sys::ESP_INTR_FLAG_LEVEL1 as i32, // Interrupt level 1, default 0
-            // dma_buf_count: 8,
-            // dma_buf_len: 64,
-            use_apll: false,
-            tx_desc_auto_clear: false,
-            fixed_mclk: 0,
-            mclk_multiple: esp_idf_sys::i2s_mclk_multiple_t_I2S_MCLK_MULTIPLE_256,
-            bits_per_chan: 0,
-            bit_order_msb: false,
-            big_edin: false,
-            left_align: false,
-            chan_mask: esp_idf_sys::i2s_channel_t_I2S_CHANNEL_MONO,
-            total_chan: 0,
-            skip_msk: false,
-            __bindgen_anon_1: i2s_driver_config_t__bindgen_ty_1 { dma_buf_count: 8 },
-            __bindgen_anon_2: i2s_driver_config_t__bindgen_ty_2 { dma_buf_len: 64 },
-        };
+        // let config = esp_idf_sys::i2s_driver_config_t {
+        //     mode: esp_idf_sys::i2s_mode_t_I2S_MODE_MASTER | esp_idf_sys::i2s_mode_t_I2S_MODE_TX,
+        //     sample_rate: SAMPLE_RATE,
+        //     bits_per_sample: esp_idf_sys::i2s_bits_per_chan_t_I2S_BITS_PER_CHAN_16BIT,
+        //     channel_format: esp_idf_sys::i2s_channel_fmt_t_I2S_CHANNEL_FMT_ONLY_RIGHT,
+        //     communication_format: esp_idf_sys::i2s_comm_format_t_I2S_COMM_FORMAT_STAND_I2S,
+        //     intr_alloc_flags: esp_idf_sys::ESP_INTR_FLAG_LEVEL1 as i32, // Interrupt level 1, default 0
+        //     // dma_buf_count: 8,
+        //     // dma_buf_len: 64,
+        //     use_apll: false,
+        //     tx_desc_auto_clear: false,
+        //     fixed_mclk: 0,
+        //     mclk_multiple: esp_idf_sys::i2s_mclk_multiple_t_I2S_MCLK_MULTIPLE_256,
+        //     bits_per_chan: 0,
+        //     bit_order_msb: false,
+        //     big_edin: false,
+        //     left_align: false,
+        //     chan_mask: esp_idf_sys::i2s_channel_t_I2S_CHANNEL_MONO,
+        //     total_chan: 0,
+        //     skip_msk: false,
+        //     __bindgen_anon_1: i2s_driver_config_t__bindgen_ty_1 { dma_buf_count: 8 },
+        //     __bindgen_anon_2: i2s_driver_config_t__bindgen_ty_2 { dma_buf_len: 64 },
+        // };
 
-        let result = unsafe {
-            esp_idf_sys::i2s_driver_install(I2S_PORT_NUM, &config, 0, std::ptr::null_mut())
-        };
-        if result != esp_idf_sys::ESP_OK {
-            panic!("error installing i2s driver");
-        }
+        // let result = unsafe {
+        //     esp_idf_sys::i2s_driver_install(I2S_PORT_NUM, &config, 0, std::ptr::null_mut())
+        // };
+        // if result != esp_idf_sys::ESP_OK {
+        //     panic!("error installing i2s driver");
+        // }
 
-        let pin_config = esp_idf_sys::i2s_pin_config_t {
-            mck_io_num: esp_idf_sys::I2S_PIN_NO_CHANGE, // unused
-            bck_io_num: esp_idf_sys::gpio_num_t_GPIO_NUM_6,
-            ws_io_num: esp_idf_sys::gpio_num_t_GPIO_NUM_5, // LR clock
-            data_out_num: esp_idf_sys::gpio_num_t_GPIO_NUM_44,
-            data_in_num: esp_idf_sys::I2S_PIN_NO_CHANGE,
-        };
+        // let pin_config = esp_idf_sys::i2s_pin_config_t {
+        //     mck_io_num: esp_idf_sys::I2S_PIN_NO_CHANGE, // unused
+        //     bck_io_num: esp_idf_sys::gpio_num_t_GPIO_NUM_6,
+        //     ws_io_num: esp_idf_sys::gpio_num_t_GPIO_NUM_5, // LR clock
+        //     data_out_num: esp_idf_sys::gpio_num_t_GPIO_NUM_44,
+        //     data_in_num: esp_idf_sys::I2S_PIN_NO_CHANGE,
+        // };
 
-        let result = unsafe { esp_idf_sys::i2s_set_pin(I2S_PORT_NUM, &pin_config) };
-        if result != esp_idf_sys::ESP_OK {
-            panic!("error setting i2s pins");
-        }
+        // let result = unsafe { esp_idf_sys::i2s_set_pin(I2S_PORT_NUM, &pin_config) };
+        // if result != esp_idf_sys::ESP_OK {
+        //     panic!("error setting i2s pins");
+        // }
 
         // let i2s_config = StdConfig::new(
         //     Config::default(),
@@ -278,8 +324,15 @@ impl AudioService {
 
         // i2s_driver.write_all(byte_slice, BLOCK_TIME.into()).unwrap();
 
-        let ret = i2s_write(
-            0,
+        // let ret = i2s_write(
+        //     0,
+        //     buffer as *mut c_void,
+        //     bytes_to_write,
+        //     &mut bytes_written,
+        //     MAX_DELAY,
+        // );
+        let ret = i2s_channel_write(
+            I2S_TX_CHAN,
             buffer as *mut c_void,
             bytes_to_write,
             &mut bytes_written,
