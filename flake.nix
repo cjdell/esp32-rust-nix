@@ -61,10 +61,12 @@
           ln -s $(rustup which --toolchain stable rust-analyzer) ~/rust-analyzer/rust-analyzer
           mkdir -p ~/.config/rust-analyzer
 
-          PATH=~/rust-analyzer:$PATH zeditor --foreground .
+          # PATH=~/rust-analyzer:$PATH zeditor --foreground .
           # PATH=~/rust-analyzer:$PATH code .
 
-          # ${pkgs.nushell}/bin/nu
+          export PATH=~/rust-analyzer:$PATH
+
+          ${pkgs.nushell}/bin/nu
         '';
       };
     in
