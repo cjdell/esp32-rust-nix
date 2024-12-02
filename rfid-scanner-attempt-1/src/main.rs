@@ -52,6 +52,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let audio_service = AudioService::new();
 
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
     let speech_service = SpeechService::new(audio_service);
 
     // speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
