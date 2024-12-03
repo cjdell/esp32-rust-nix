@@ -1,15 +1,9 @@
 use anyhow::bail;
-use async_io::Async;
-use core::{net::Ipv4Addr, str};
+use core::str;
 use embedded_svc::http::client::Client;
 use esp_idf_hal::io::Read;
 use esp_idf_svc::http::client::EspHttpConnection;
-use futures::{AsyncReadExt as _, AsyncWriteExt as _};
 use log::info;
-use std::{
-    io::{self},
-    net::{SocketAddrV4, TcpStream, ToSocketAddrs},
-};
 
 #[derive(Copy, Clone)]
 pub struct AuthService {}
@@ -19,29 +13,7 @@ impl AuthService {
         AuthService {}
     }
 
-    pub async fn check1(&self) -> Result<(), io::Error> {
-        info!("Check 1");
-
-        // let addr = "one.one.one.one:80".to_socket_addrs()?.next().unwrap();
-        let addr = SocketAddrV4::new(Ipv4Addr::new(192, 168, 49, 53), 8000);
-
-        let mut stream = Async::<TcpStream>::connect(addr).await?;
-        // let mut stream = TcpStream::connect(addr)?;
-
-        stream.write_all("GET / HTTP/1.0\n\n".as_bytes()).await?;
-
-        let mut result = Vec::new();
-
-        stream.read_to_end(&mut result).await?;
-
-        info!(
-            "1.1.1.1 returned:\n=================\n{}\n=================\nSince it returned something, all is OK",
-            std::str::from_utf8(&result).map_err(|_| io::ErrorKind::InvalidData)?);
-
-        Ok(())
-    }
-
-    pub fn check2(&self) -> anyhow::Result<()> {
+    pub fn check(&self) -> anyhow::Result<()> {
         info!("Check 2");
 
         // HTTP Configuration

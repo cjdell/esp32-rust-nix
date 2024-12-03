@@ -9,13 +9,13 @@ mod wifi;
 use audio::AudioService;
 use auth::AuthService;
 use common::SENDER;
-use esp_idf_hal::{cpu::Core, gpio::PinDriver, peripherals};
+use esp_idf_hal::{cpu::Core, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
 use log::{error, info, warn};
 use rfid::RfidService;
 use speech::SpeechService;
-use std::{error::Error, time::Duration};
-use tokio::sync::mpsc::{self, Sender};
+use std::error::Error;
+use tokio::sync::mpsc::{self};
 use wifi::WifiConnection;
 
 fn main() {
@@ -46,20 +46,13 @@ fn main() {
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     info!("Starting async_main.");
 
-    let audio_service = AudioService::new();
+    AudioService::new();
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    let speech_service = SpeechService::new();
 
-    let speech_service = SpeechService::new(audio_service);
-
-    // speak("Avoid repeatedly calculating indices. We can use the copy_from_slice method, which copies data in bulk rather than assigning individual elements. Reduce pointer arithmetic in the loop: We can directly iterate over the buffer as a slice. Minimize temporary variables: Directly calculate bytes without assigning it to a temporary variable. Make the stretched_buffer initialization more efficient by filling sections at a time rather than manually assigning individual indices.".to_owned());
     speech_service.speak("System Online.".to_owned());
-
-    tokio::time::sleep(Duration::from_secs(5)).await;
 
     let (tx, mut rx) = mpsc::channel::<u32>(32);
     unsafe { SENDER = Some(tx.clone()) };
@@ -92,13 +85,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         while let Some(code) = rx.recv().await {
             println!("==== Code: {:?}", code);
 
-            // if let Err(err) = auth_service.check1().await {
-            //     warn!("Auth failed: {err:?}");
-            // }
-
-            // tokio::time::sleep(Duration::from_secs(5)).await;
-
-            if let Err(err) = auth_service.check2() {
+            if let Err(err) = auth_service.check() {
                 warn!("Auth failed: {err:?}");
             }
         }
@@ -107,7 +94,6 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     };
 
     tokio::try_join!(
-        // audio_service.run(),
         wifi_connection.connect(),
         rfid_service.run(),
         app_loop(),
@@ -118,7 +104,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 }
 
 // async fn detect_touch(speech_service: &SpeechService) -> anyhow::Result<()> {
-//     let mut touch = unsafe { PinDriver::input(esp_idf_hal::gpio::Gpio1::new()).unwrap() };
+//     let mut touch = unsafe { PinDriver::input(esp_idf_hal::gpio::Gpio4::new()).unwrap() };
 //     touch.set_pull(esp_idf_hal::gpio::Pull::Up)?;
 
 //     loop {
