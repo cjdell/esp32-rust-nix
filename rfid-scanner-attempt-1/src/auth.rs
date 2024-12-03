@@ -58,7 +58,7 @@ impl AuthService {
 
         // HTTP Request Submission
         // Define URL
-        let url = "http://192.168.49.53:8000";
+        let url = "http://192.168.49.52:8000";
 
         // Prepare request
         let request = httpclient.get(url)?;

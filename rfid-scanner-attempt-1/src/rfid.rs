@@ -1,6 +1,6 @@
 use crate::speech::SpeechService;
 use esp_idf_hal::{
-    gpio::{Gpio43, Gpio7, Gpio8, Gpio9},
+    gpio::{Gpio43, Gpio44, Gpio7, Gpio8, Gpio9},
     spi::{self, SpiDriver, SPI3},
 };
 use mfrc522::Mfrc522;
@@ -37,7 +37,7 @@ impl RfidService {
 
         let spi_device_driver = spi::SpiDeviceDriver::new(
             driver,
-            Some(unsafe { Gpio43::new() }),
+            Some(unsafe { Gpio44::new() }),
             &esp_idf_hal::spi::config::Config::new(),
         )
         .map_err(|err| anyhow::Error::msg(format!("SpiDeviceDriver Error: {}", err)))?;

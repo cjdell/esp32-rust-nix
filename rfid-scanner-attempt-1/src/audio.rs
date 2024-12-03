@@ -56,7 +56,7 @@ impl AudioService {
             role: i2s_role_t_I2S_ROLE_MASTER,
             dma_desc_num: 6,
             dma_frame_num: 240,
-            auto_clear: false,
+            auto_clear: true,
             intr_priority: 0,
         };
 
@@ -96,11 +96,11 @@ impl AudioService {
             },
             gpio_cfg: i2s_tdm_gpio_config_t {
                 mclk: esp_idf_sys::I2S_PIN_NO_CHANGE,
-                bclk: gpio_num_t_GPIO_NUM_6,
+                bclk: gpio_num_t_GPIO_NUM_2,
                 din: esp_idf_sys::I2S_PIN_NO_CHANGE,
-                dout: gpio_num_t_GPIO_NUM_44,
+                dout: gpio_num_t_GPIO_NUM_1,
                 invert_flags: i2s_tdm_gpio_config_t__bindgen_ty_1::default(),
-                ws: gpio_num_t_GPIO_NUM_5,
+                ws: gpio_num_t_GPIO_NUM_3,
             },
         };
 
@@ -164,25 +164,25 @@ impl AudioService {
         //     }
         // }
 
-        // unsafe {
-        //     RING_BUF = xRingbufferCreate(
-        //         BUFFER_SIZE_SAMPLES * std::mem::size_of::<i16>(),
-        //         RingbufferType_t_RINGBUF_TYPE_BYTEBUF,
-        //     );
-        // }
+        unsafe {
+            RING_BUF = xRingbufferCreate(
+                BUFFER_SIZE_SAMPLES * std::mem::size_of::<i16>(),
+                RingbufferType_t_RINGBUF_TYPE_BYTEBUF,
+            );
+        }
 
         unsafe {
             let task_name = CString::new("I2SWriteTask").unwrap();
 
-            // xTaskCreatePinnedToCore(
-            //     Some(AudioService::i2s_write_task),
-            //     task_name.as_ptr(),
-            //     2048,
-            //     (0) as *mut c_void,
-            //     I2S_PRI,
-            //     (0) as *mut TaskHandle_t,
-            //     I2S_CORE,
-            // )
+            xTaskCreatePinnedToCore(
+                Some(AudioService::i2s_write_task),
+                task_name.as_ptr(),
+                2048,
+                (0) as *mut c_void,
+                I2S_PRI,
+                (0) as *mut TaskHandle_t,
+                I2S_CORE,
+            )
         };
 
         const I2S_PORT_NUM: u32 = 0;
@@ -301,7 +301,7 @@ impl AudioService {
 
                 unsafe { vRingbufferReturnItem(RING_BUF, buffer) };
 
-                // unsafe { vTaskDelay(10) };
+                unsafe { vTaskDelay(10) };
             }
         }
     }
