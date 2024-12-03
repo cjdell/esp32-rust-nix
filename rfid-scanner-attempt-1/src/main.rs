@@ -111,22 +111,22 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         wifi_connection.connect(),
         rfid_service.run(),
         app_loop(),
-        detect_touch(&speech_service),
+        // detect_touch(&speech_service),
     )?;
 
     Ok(())
 }
 
-async fn detect_touch(speech_service: &SpeechService) -> anyhow::Result<()> {
-    let mut touch = unsafe { PinDriver::input(esp_idf_hal::gpio::Gpio1::new()).unwrap() };
-    touch.set_pull(esp_idf_hal::gpio::Pull::Up)?;
+// async fn detect_touch(speech_service: &SpeechService) -> anyhow::Result<()> {
+//     let mut touch = unsafe { PinDriver::input(esp_idf_hal::gpio::Gpio1::new()).unwrap() };
+//     touch.set_pull(esp_idf_hal::gpio::Pull::Up)?;
 
-    loop {
-        if touch.is_high() {
-            // speech_service.speak("Touch.".to_owned());
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+//     loop {
+//         if touch.is_high() {
+//             // speech_service.speak("Touch.".to_owned());
+//             tokio::time::sleep(Duration::from_secs(1)).await;
+//         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}
+//         tokio::time::sleep(Duration::from_millis(100)).await;
+//     }
+// }
