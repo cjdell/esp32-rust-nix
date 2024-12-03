@@ -1,21 +1,21 @@
-use crate::speech::SpeechService;
 use esp_idf_hal::{
-    gpio::{Gpio43, Gpio44, Gpio7, Gpio8, Gpio9},
+    gpio::{Gpio44, Gpio7, Gpio8, Gpio9},
     spi::{self, SpiDriver, SPI3},
 };
 use mfrc522::Mfrc522;
 use std::time::Duration;
 use tokio::{sync::mpsc::Sender, time::sleep};
 
+use crate::common::SystemMessage;
+
 // #[derive(Copy, Clone)]
 pub struct RfidService {
-    speech_service: SpeechService,
-    tx: Sender<u32>,
+    tx: Sender<SystemMessage>,
 }
 
 impl RfidService {
-    pub fn new(speech_service: SpeechService, tx: Sender<u32>) -> RfidService {
-        RfidService { speech_service, tx }
+    pub fn new(tx: Sender<SystemMessage>) -> RfidService {
+        RfidService { tx }
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -62,9 +62,7 @@ impl RfidService {
 
                     let code = to_u32(bytes).unwrap_or_default();
 
-                    self.speech_service.speak(format!("Card {}.", code));
-
-                    self.tx.send(code).await?;
+                    self.tx.send(SystemMessage::OnCard(code)).await?;
 
                     // Don't spam
                     sleep(Duration::from_secs(3)).await;

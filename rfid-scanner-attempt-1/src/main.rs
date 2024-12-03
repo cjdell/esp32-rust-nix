@@ -8,14 +8,14 @@ mod wifi;
 
 use audio::AudioService;
 use auth::AuthService;
-use common::SENDER;
+use common::SystemMessage;
 use esp_idf_hal::{cpu::Core, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
 use log::{error, info, warn};
 use rfid::RfidService;
 use speech::SpeechService;
 use std::error::Error;
-use tokio::sync::mpsc::{self};
+use tokio::sync::mpsc;
 use wifi::WifiConnection;
 
 fn main() {
@@ -48,16 +48,15 @@ fn main() {
 async fn async_main() -> Result<(), Box<dyn Error>> {
     info!("Starting async_main.");
 
+    let (message_bus_tx, mut message_bus_rx) = mpsc::channel::<SystemMessage>(10);
+
     AudioService::new();
 
     let speech_service = SpeechService::new();
 
     speech_service.speak("System Online.".to_owned());
 
-    let (tx, mut rx) = mpsc::channel::<u32>(32);
-    unsafe { SENDER = Some(tx.clone()) };
-
-    let rfid_service = RfidService::new(speech_service, tx.clone());
+    let rfid_service = RfidService::new(message_bus_tx.clone());
 
     let event_loop = EspSystemEventLoop::take().unwrap();
     let timer = EspTaskTimerService::new()?;
@@ -79,18 +78,34 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    let auth_service = AuthService::new();
+    let auth_service = AuthService::new(message_bus_tx.clone());
 
     let mut app_loop = async || -> anyhow::Result<()> {
-        while let Some(code) = rx.recv().await {
-            println!("==== Code: {:?}", code);
+        loop {
+            if let Some(message) = message_bus_rx.recv().await {
+                match message {
+                    SystemMessage::Speak(str) => {
+                        speech_service.speak(str);
+                    }
+                    SystemMessage::OnCard(code) => {
+                        println!("==== Code: {:?}", code);
 
-            if let Err(err) = auth_service.check() {
-                warn!("Auth failed: {err:?}");
+                        if let Err(err) = auth_service.check().await {
+                            warn!("Auth failed: {err:?}");
+                        }
+                    }
+                    SystemMessage::OnAuth(name, granted) => {
+                        println!("==== Name: {:?}", name);
+
+                        if granted {
+                            speech_service.speak(format!("Successfully authenticated {}.", name));
+                        } else {
+                            speech_service.speak(format!("Access denied {}.", name));
+                        }
+                    }
+                }
             }
         }
-
-        Ok(())
     };
 
     tokio::try_join!(

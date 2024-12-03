@@ -4,26 +4,29 @@ use embedded_svc::http::client::Client;
 use esp_idf_hal::io::Read;
 use esp_idf_svc::http::client::EspHttpConnection;
 use log::info;
+use tokio::sync::mpsc::Sender;
 
-#[derive(Copy, Clone)]
-pub struct AuthService {}
+use crate::common::SystemMessage;
+
+pub struct AuthService {
+    tx: Sender<SystemMessage>,
+}
 
 impl AuthService {
-    pub fn new() -> AuthService {
-        AuthService {}
+    pub fn new(tx: Sender<SystemMessage>) -> AuthService {
+        AuthService { tx }
     }
 
-    pub fn check(&self) -> anyhow::Result<()> {
+    pub async fn check(&self) -> anyhow::Result<()> {
         info!("Check 2");
 
         // HTTP Configuration
         // Create HTTPS Connection Handle
-        let mut httpconnection =
-            EspHttpConnection::new(&esp_idf_svc::http::client::Configuration {
-                use_global_ca_store: false,
-                crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
-                ..Default::default()
-            })?;
+        let httpconnection = EspHttpConnection::new(&esp_idf_svc::http::client::Configuration {
+            use_global_ca_store: false,
+            crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
+            ..Default::default()
+        })?;
 
         // Create HTTPS Client
         let mut httpclient = Client::wrap(httpconnection);
@@ -122,7 +125,7 @@ impl AuthService {
                                     // It's ok to use unsafe here as the error code already told us that
                                     // the UTF-8 data up to this point is valid, so we can tell the compiler
                                     // it's fine.
-                                    print!("{}", str::from_utf8_unchecked(&buf[..valid_up_to]));
+                                    print!("{}\n", str::from_utf8_unchecked(&buf[..valid_up_to]));
                                 }
                                 buf.copy_within(valid_up_to.., 0);
                                 offset = size_plus_offset - valid_up_to;
@@ -131,6 +134,10 @@ impl AuthService {
                     }
                 }
                 println!("Total: {} bytes", total);
+
+                self.tx
+                    .send(SystemMessage::OnAuth("Insert name here".to_string(), true))
+                    .await?;
             }
             _ => bail!("Unexpected response code: {}", status),
         }
