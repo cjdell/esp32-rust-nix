@@ -11,7 +11,7 @@ use audio::AudioService;
 use auth::AuthService;
 use common::SystemMessage;
 use esp_idf_hal::{cpu::Core, peripherals};
-use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
+use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, ota::EspOta, timer::EspTaskTimerService};
 use log::{error, info, warn};
 use rfid::RfidService;
 use server::HttpServer;
@@ -53,8 +53,6 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     let (message_bus_tx, mut message_bus_rx) = mpsc::channel::<SystemMessage>(10);
 
     let mut http_server = HttpServer::new(message_bus_tx.clone());
-
-    // http_server.start().unwrap();
 
     AudioService::new();
 
@@ -113,6 +111,17 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
                         } else {
                             speech_service.speak(format!("Access denied {}.", name));
                         }
+                    }
+                    SystemMessage::OnOtaBuffer(arc) => {
+                        let mut ota = EspOta::new().expect("obtain OTA instance");
+
+                        let mut update = ota.initiate_update().expect("initiate OTA");
+
+                        update.write(&arc).expect("write OTA data");
+
+                        update.complete().expect("complete OTA");
+
+                        esp_idf_svc::hal::reset::restart();
                     }
                 }
             }

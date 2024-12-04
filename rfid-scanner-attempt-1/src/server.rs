@@ -1,14 +1,26 @@
+use std::sync::Arc;
+
 use embedded_svc::http::Headers;
 use esp_idf_hal::io::{Read, Write};
-use esp_idf_svc::http::{server::EspHttpServer, Method};
-use tokio::sync::mpsc::Sender;
+use esp_idf_svc::{
+    http::{
+        client::EspHttpConnection,
+        server::{EspHttpServer, Request},
+        Method,
+    },
+    ota::EspOta,
+};
+use tokio::{
+    runtime::{Builder, Runtime},
+    sync::mpsc::Sender,
+};
 
 use crate::common::SystemMessage;
 
 static INDEX_HTML: &str = "Hello"; //include_str!("http_server_page.html");
 
 // Max payload length
-const MAX_LEN: usize = 128;
+const MAX_LEN: usize = 2048 * 1024;
 
 // Need lots of stack to parse JSON
 const STACK_SIZE: usize = 10240;
@@ -40,6 +52,9 @@ impl HttpServer {
 
         self.started = true;
 
+        let tx = self.tx.clone();
+        let tx2 = self.tx.clone();
+
         let mut server = self.create_server()?;
 
         server.fn_handler("/", Method::Get, |req| {
@@ -48,7 +63,24 @@ impl HttpServer {
                 .map(|_| ())
         })?;
 
-        server.fn_handler::<anyhow::Error, _>("/post", Method::Post, |mut req| {
+        server.fn_handler("/say", Method::Get, move |req| {
+            let msg: String = req.uri().split("?msg=").nth(1).unwrap().to_string();
+
+            let tx = tx.clone();
+
+            Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async { tx.send(SystemMessage::Speak(msg)).await })
+                .unwrap();
+
+            req.into_ok_response()?
+                .write_all("OK".as_bytes())
+                .map(|_| ())
+        })?;
+
+        server.fn_handler::<anyhow::Error, _>("/update", Method::Post, move |mut req| {
             let len = req.content_len().unwrap_or(0) as usize;
 
             if len > MAX_LEN {
@@ -59,17 +91,17 @@ impl HttpServer {
 
             let mut buf = vec![0; len];
             req.read_exact(&mut buf)?;
+
             let mut resp = req.into_ok_response()?;
 
-            // if let Ok(form) = serde_json::from_slice::<FormData>(&buf) {
-            //     write!(
-            //         resp,
-            //         "Hello, {}-year-old {} from {}!",
-            //         form.age, form.first_name, form.birthplace
-            //     )?;
-            // } else {
-            resp.write_all("JSON error".as_bytes())?;
-            // }
+            Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async { tx2.send(SystemMessage::OnOtaBuffer(Arc::new(buf))).await })
+                .unwrap();
+
+            resp.write_all(format!("Done {}", len).as_bytes())?;
 
             Ok(())
         })?;
@@ -78,5 +110,17 @@ impl HttpServer {
         core::mem::forget(server);
 
         Ok(())
+    }
+
+    fn ota(data: &[u8]) {
+        let mut ota = EspOta::new().expect("obtain OTA instance");
+
+        let mut update = ota.initiate_update().expect("initiate OTA");
+
+        update.write(&data).expect("write OTA data");
+
+        update.complete().expect("complete OTA");
+
+        esp_idf_svc::hal::reset::restart();
     }
 }
