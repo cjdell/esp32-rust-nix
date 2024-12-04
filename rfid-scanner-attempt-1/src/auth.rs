@@ -33,7 +33,7 @@ impl AuthService {
 
         // HTTP Request Submission
         // Define URL
-        let url = "http://192.168.49.52:8000";
+        let url = "http://10.3.2.151:8000";
 
         // Prepare request
         let request = httpclient.get(url)?;
@@ -125,7 +125,7 @@ impl AuthService {
                                     // It's ok to use unsafe here as the error code already told us that
                                     // the UTF-8 data up to this point is valid, so we can tell the compiler
                                     // it's fine.
-                                    print!("{}\n", str::from_utf8_unchecked(&buf[..valid_up_to]));
+                                    print!("{}", str::from_utf8_unchecked(&buf[..valid_up_to]));
                                 }
                                 buf.copy_within(valid_up_to.., 0);
                                 offset = size_plus_offset - valid_up_to;
@@ -133,7 +133,8 @@ impl AuthService {
                         }
                     }
                 }
-                println!("Total: {} bytes", total);
+
+                println!("\nTotal: {} bytes", total);
 
                 self.tx
                     .send(SystemMessage::OnAuth("Insert name here".to_string(), true))

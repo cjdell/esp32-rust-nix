@@ -3,6 +3,7 @@ mod audio;
 mod auth;
 mod common;
 mod rfid;
+mod server;
 mod speech;
 mod wifi;
 
@@ -13,6 +14,7 @@ use esp_idf_hal::{cpu::Core, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, timer::EspTaskTimerService};
 use log::{error, info, warn};
 use rfid::RfidService;
+use server::HttpServer;
 use speech::SpeechService;
 use std::error::Error;
 use tokio::sync::mpsc;
@@ -50,6 +52,10 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let (message_bus_tx, mut message_bus_rx) = mpsc::channel::<SystemMessage>(10);
 
+    let mut http_server = HttpServer::new(message_bus_tx.clone());
+
+    // http_server.start().unwrap();
+
     AudioService::new();
 
     let speech_service = SpeechService::new();
@@ -74,7 +80,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         event_loop,
         timer,
         Some(nvs_default_partition),
-        speech_service,
+        message_bus_tx.clone(),
     )
     .await?;
 
@@ -86,6 +92,11 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
                 match message {
                     SystemMessage::Speak(str) => {
                         speech_service.speak(str);
+                    }
+                    SystemMessage::WifiConnected() => {
+                        http_server.start().unwrap();
+
+                        speech_service.speak("Connected".to_string());
                     }
                     SystemMessage::OnCard(code) => {
                         println!("==== Code: {:?}", code);
