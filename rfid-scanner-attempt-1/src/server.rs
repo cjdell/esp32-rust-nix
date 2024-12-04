@@ -2,20 +2,10 @@ use std::sync::Arc;
 
 use embedded_svc::http::Headers;
 use esp_idf_hal::io::{Read, Write};
-use esp_idf_svc::{
-    http::{
-        client::EspHttpConnection,
-        server::{EspHttpServer, Request},
-        Method,
-    },
-    ota::EspOta,
-};
-use tokio::{
-    runtime::{Builder, Runtime},
-    sync::mpsc::Sender,
-};
+use esp_idf_svc::http::{server::EspHttpServer, Method};
+use tokio::{runtime::Builder, sync::mpsc::Sender};
 
-use crate::common::SystemMessage;
+use crate::{common::SystemMessage, spiffs::Spiffs};
 
 static INDEX_HTML: &str = "Hello"; //include_str!("http_server_page.html");
 
@@ -52,7 +42,7 @@ impl HttpServer {
 
         self.started = true;
 
-        let tx = self.tx.clone();
+        let tx1 = self.tx.clone();
         let tx2 = self.tx.clone();
 
         let mut server = self.create_server()?;
@@ -66,13 +56,11 @@ impl HttpServer {
         server.fn_handler("/say", Method::Get, move |req| {
             let msg: String = req.uri().split("?msg=").nth(1).unwrap().to_string();
 
-            let tx = tx.clone();
-
             Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(async { tx.send(SystemMessage::Speak(msg)).await })
+                .block_on(async { tx1.send(SystemMessage::Speak(msg)).await })
                 .unwrap();
 
             req.into_ok_response()?
@@ -106,21 +94,42 @@ impl HttpServer {
             Ok(())
         })?;
 
+        server.fn_handler("/read-file", Method::Get, |req| {
+            let file_name: String = req.uri().split("?name=").nth(1).unwrap().to_string();
+
+            let contents = Spiffs::read_string(file_name);
+
+            req.into_ok_response()?
+                .write_all(contents.as_bytes())
+                .map(|_| ())
+        })?;
+
+        server.fn_handler::<anyhow::Error, _>("/write-file", Method::Post, move |mut req| {
+            let file_name: String = req.uri().split("?name=").nth(1).unwrap().to_string();
+
+            let len = req.content_len().unwrap_or(0) as usize;
+
+            if len > MAX_LEN {
+                req.into_status_response(413)?
+                    .write_all("Request too big".as_bytes())?;
+                return Ok(());
+            }
+
+            let mut buf = vec![0; len];
+            req.read_exact(&mut buf)?;
+
+            let mut resp = req.into_ok_response()?;
+
+            Spiffs::write_string(file_name, String::from_utf8(buf).unwrap());
+
+            resp.write_all(format!("Done {}", len).as_bytes())?;
+
+            Ok(())
+        })?;
+
         // Keeps the server running in the background...
         core::mem::forget(server);
 
         Ok(())
-    }
-
-    fn ota(data: &[u8]) {
-        let mut ota = EspOta::new().expect("obtain OTA instance");
-
-        let mut update = ota.initiate_update().expect("initiate OTA");
-
-        update.write(&data).expect("write OTA data");
-
-        update.complete().expect("complete OTA");
-
-        esp_idf_svc::hal::reset::restart();
     }
 }

@@ -2,4 +2,7 @@
 /.embuild
 /target
 /Cargo.lock
-ota.img
+tmp*/
+*.img
+*.bin
+*.mp3

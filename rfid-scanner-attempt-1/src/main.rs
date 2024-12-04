@@ -5,19 +5,21 @@ mod common;
 mod rfid;
 mod server;
 mod speech;
+mod spiffs;
 mod wifi;
 
 use audio::AudioService;
 use auth::AuthService;
 use common::SystemMessage;
-use esp_idf_hal::{cpu::Core, peripherals};
+use esp_idf_hal::{cpu::Core, gpio::PinDriver, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, ota::EspOta, timer::EspTaskTimerService};
 use log::{error, info, warn};
 use rfid::RfidService;
 use server::HttpServer;
 use speech::SpeechService;
-use std::error::Error;
-use tokio::sync::mpsc;
+use spiffs::Spiffs;
+use std::{error::Error, time::Duration};
+use tokio::{sync::mpsc, time::sleep};
 use wifi::WifiConnection;
 
 fn main() {
@@ -52,13 +54,20 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let (message_bus_tx, mut message_bus_rx) = mpsc::channel::<SystemMessage>(10);
 
+    let mut door = unsafe { PinDriver::output(esp_idf_hal::gpio::Gpio43::new()).unwrap() };
+    door.set_high().unwrap();
+
+    Spiffs::init()?;
+
     let mut http_server = HttpServer::new(message_bus_tx.clone());
 
     AudioService::new();
 
     let speech_service = SpeechService::new();
 
-    speech_service.speak("System Online.".to_owned());
+    let ready_msg = Spiffs::read_string("ready.txt".to_string());
+
+    speech_service.speak(ready_msg);
 
     let rfid_service = RfidService::new(message_bus_tx.clone());
 
@@ -108,6 +117,12 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
                         if granted {
                             speech_service.speak(format!("Successfully authenticated {}.", name));
+
+                            door.set_low().unwrap();
+
+                            sleep(Duration::from_millis(5000)).await;
+
+                            door.set_high().unwrap();
                         } else {
                             speech_service.speak(format!("Access denied {}.", name));
                         }

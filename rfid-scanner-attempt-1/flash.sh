@@ -5,6 +5,8 @@ cargo build -r
 
 cargo espflash partition-table partitions.csv
 
+cargo espflash erase-parts -c esp32s3 --partition-table partitions.csv otadata
+
 cargo espflash flash --partition-table partitions.csv -s 8mb
 
 # Find these with "espflash partition-table partitions.csv"

@@ -41,6 +41,7 @@
           python3Packages.pip
           python3Packages.virtualenv
           ldproxy
+          mkspiffs
 
           deno
         ];
