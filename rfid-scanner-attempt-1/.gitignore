@@ -2,7 +2,10 @@
 /.embuild
 /target
 /Cargo.lock
+
 tmp*/
+.direnv/
+
 *.img
 *.bin
 *.mp3

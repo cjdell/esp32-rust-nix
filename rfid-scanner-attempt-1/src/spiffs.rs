@@ -1,8 +1,7 @@
 use esp_idf_sys::{esp_spiffs_check, esp_vfs_spiffs_conf_t, esp_vfs_spiffs_register, ESP_OK};
 use std::{
     ffi::CString,
-    fs::{self, File},
-    io::Read,
+    fs::{self},
 };
 
 pub struct Spiffs {}
@@ -40,51 +39,24 @@ impl Spiffs {
             );
         }
 
-        // match fs::read_to_string("/spiffs/ready.txt") {
-        //     Ok(str) => {
-        //         log::info!("READ {}", str);
-        //     },
-        //     Err(err) => {
-        //         log::error!("read_string failed: {}", err);
-        //     }
-        // };
-
         Ok(())
     }
 
-    pub fn read_string(path: String) -> String {
-        match fs::read_to_string(format!("/spiffs/{}", path)) {
-            Ok(str) => str,
-            Err(err) => {
-                log::error!("read_string failed: {}", err);
-                "".to_string()
-            }
-        }
+    pub fn read_string(path: String) -> anyhow::Result<String> {
+        fs::read_to_string(format!("/spiffs/{}", path))
+            .map_err(|err| anyhow::Error::msg(format!("read_string Error: {}", err)))
+    }
 
-        // match File::open("/spiffs/test_write.txt") {
-        //     Ok(mut file) => {
-        //         let mut s: String = String::new();
-
-        //         match file.read_to_string(&mut s) {
-        //             Ok(len) => {
-        //                 log::error!("read {} bytes", len);
-
-        //                 s
-        //             }
-        //             Err(err) => {
-        //                 log::error!("read failed: {}", err);
-        //                 "".to_string()
-        //             }
-        //         }
-        //     }
-        //     Err(err) => {
-        //         log::error!("open failed: {}", err);
-        //         "".to_string()
-        //     }
-        // }
+    pub fn read_binary(path: String) -> anyhow::Result<Vec<u8>> {
+        fs::read(format!("/spiffs/{}", path))
+            .map_err(|err| anyhow::Error::msg(format!("read_binary Error: {}", err)))
     }
 
     pub fn write_string(path: String, contents: String) {
+        fs::write(format!("/spiffs/{}", path), contents).unwrap();
+    }
+
+    pub fn write_binary(path: String, contents: Vec<u8>) {
         fs::write(format!("/spiffs/{}", path), contents).unwrap();
     }
 }

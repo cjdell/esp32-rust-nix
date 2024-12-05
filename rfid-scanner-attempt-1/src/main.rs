@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+#![feature(raw_ref_op)]
 mod audio;
 mod auth;
 mod common;
@@ -65,7 +66,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let speech_service = SpeechService::new();
 
-    let ready_msg = Spiffs::read_string("ready.txt".to_string());
+    let ready_msg = Spiffs::read_string("ready.txt".to_string())
+        .unwrap_or_else(|err| "Ready message not found".to_string());
 
     speech_service.speak(ready_msg);
 
@@ -108,15 +110,15 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
                     SystemMessage::OnCard(code) => {
                         println!("==== Code: {:?}", code);
 
-                        if let Err(err) = auth_service.check().await {
+                        if let Err(err) = auth_service.check_text(code).await {
                             warn!("Auth failed: {err:?}");
                         }
                     }
-                    SystemMessage::OnAuth(name, granted) => {
+                    SystemMessage::OnAuth(code, name, granted) => {
                         println!("==== Name: {:?}", name);
 
                         if granted {
-                            speech_service.speak(format!("Successfully authenticated {}.", name));
+                            speech_service.speak(format!("Access granted {}.", name));
 
                             door.set_low().unwrap();
 
@@ -124,7 +126,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
                             door.set_high().unwrap();
                         } else {
-                            speech_service.speak(format!("Access denied {}.", name));
+                            speech_service.speak(format!("Access denied {}.", code));
                         }
                     }
                     SystemMessage::OnOtaBuffer(arc) => {
@@ -147,22 +149,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         wifi_connection.connect(),
         rfid_service.run(),
         app_loop(),
-        // detect_touch(&speech_service),
     )?;
 
     Ok(())
 }
-
-// async fn detect_touch(speech_service: &SpeechService) -> anyhow::Result<()> {
-//     let mut touch = unsafe { PinDriver::input(esp_idf_hal::gpio::Gpio4::new()).unwrap() };
-//     touch.set_pull(esp_idf_hal::gpio::Pull::Up)?;
-
-//     loop {
-//         if touch.is_high() {
-//             // speech_service.speak("Touch.".to_owned());
-//             tokio::time::sleep(Duration::from_secs(1)).await;
-//         }
-
-//         tokio::time::sleep(Duration::from_millis(100)).await;
-//     }
-// }

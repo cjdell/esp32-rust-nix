@@ -12,7 +12,7 @@ pub enum SystemMessage {
     Speak(String),
     WifiConnected(),
     OnCard(u32),
-    OnAuth(String, bool),
+    OnAuth(u32, String, bool),
 
     OnOtaBuffer(Arc<Vec<u8>>),
 }

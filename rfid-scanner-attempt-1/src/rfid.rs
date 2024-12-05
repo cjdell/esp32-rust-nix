@@ -20,8 +20,8 @@ impl RfidService {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         let sclk = unsafe { Gpio7::new() };
-        let sdo = unsafe { Gpio9::new() }; // MOSI
-        let sdi = unsafe { Gpio8::new() }; // MISO
+        let sdo = unsafe { Gpio8::new() }; // MOSI
+        let sdi = unsafe { Gpio9::new() }; // MISO
 
         let driver = SpiDriver::new(
             unsafe { SPI3::new() },

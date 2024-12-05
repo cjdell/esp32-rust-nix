@@ -3,10 +3,9 @@ use core::str;
 use embedded_svc::http::client::Client;
 use esp_idf_hal::io::Read;
 use esp_idf_svc::http::client::EspHttpConnection;
-use log::info;
 use tokio::sync::mpsc::Sender;
 
-use crate::common::SystemMessage;
+use crate::{common::SystemMessage, spiffs::Spiffs};
 
 pub struct AuthService {
     tx: Sender<SystemMessage>,
@@ -17,9 +16,30 @@ impl AuthService {
         AuthService { tx }
     }
 
-    pub async fn check(&self) -> anyhow::Result<()> {
-        info!("Check 2");
+    pub async fn check_text(&self, code: u32) -> anyhow::Result<bool> {
+        let codes =
+            Spiffs::read_string("codes.txt".to_string()).unwrap_or_else(|err| "".to_string());
 
+        let lines = codes.split_whitespace();
+
+        for line in lines {
+            if code.to_string() == line {
+                self.tx
+                    .send(SystemMessage::OnAuth(code, code.to_string(), true))
+                    .await?;
+
+                return Ok(true);
+            };
+        }
+
+        self.tx
+            .send(SystemMessage::OnAuth(code, "".to_string(), false))
+            .await?;
+
+        Ok(false)
+    }
+
+    pub async fn check_server(&self, code: u32) -> anyhow::Result<()> {
         // HTTP Configuration
         // Create HTTPS Connection Handle
         let httpconnection = EspHttpConnection::new(&esp_idf_svc::http::client::Configuration {
@@ -137,7 +157,7 @@ impl AuthService {
                 println!("\nTotal: {} bytes", total);
 
                 self.tx
-                    .send(SystemMessage::OnAuth("Insert name here".to_string(), true))
+                    .send(SystemMessage::OnAuth(code, "Insert name here".to_string(), true))
                     .await?;
             }
             _ => bail!("Unexpected response code: {}", status),
