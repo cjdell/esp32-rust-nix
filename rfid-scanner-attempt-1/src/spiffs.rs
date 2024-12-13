@@ -33,7 +33,7 @@ impl Spiffs {
             let entry = entry?;
 
             log::info!(
-                "Found File: {} {}",
+                "==== Found File: {} {}",
                 entry.file_name().into_string().unwrap(),
                 entry.metadata().unwrap().len()
             );
@@ -47,7 +47,7 @@ impl Spiffs {
             .map_err(|err| anyhow::Error::msg(format!("read_string Error: {}", err)))
     }
 
-    pub fn read_binary(path: String) -> anyhow::Result<Vec<u8>> {
+    pub fn read_binary(path: &String) -> anyhow::Result<Vec<u8>> {
         fs::read(format!("/spiffs/{}", path))
             .map_err(|err| anyhow::Error::msg(format!("read_binary Error: {}", err)))
     }

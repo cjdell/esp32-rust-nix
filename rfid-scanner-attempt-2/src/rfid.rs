@@ -1,5 +1,5 @@
 use esp_idf_hal::{
-    gpio::{Gpio44, Gpio7, Gpio8, Gpio9},
+    gpio::{Gpio12, Gpio14, Gpio26, Gpio27, Gpio7, Gpio8, Gpio9},
     spi::{self, SpiDriver, SPI3},
 };
 use mfrc522::Mfrc522;
@@ -19,9 +19,9 @@ impl RfidService {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        let sclk = unsafe { Gpio7::new() };
-        let sdo = unsafe { Gpio8::new() }; // MOSI
-        let sdi = unsafe { Gpio9::new() }; // MISO
+        let sclk = unsafe { Gpio27::new() };
+        let sdo = unsafe { Gpio14::new() }; // MOSI
+        let sdi = unsafe { Gpio12::new() }; // MISO
 
         let driver = SpiDriver::new(
             unsafe { SPI3::new() },
@@ -37,7 +37,7 @@ impl RfidService {
 
         let spi_device_driver = spi::SpiDeviceDriver::new(
             driver,
-            Some(unsafe { Gpio44::new() }),
+            Some(unsafe { Gpio26::new() }),
             &esp_idf_hal::spi::config::Config::new(),
         )
         .map_err(|err| anyhow::Error::msg(format!("SpiDeviceDriver Error: {}", err)))?;

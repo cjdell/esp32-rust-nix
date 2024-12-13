@@ -1,28 +1,23 @@
 #![feature(async_closure)]
 #![feature(raw_ref_op)]
-mod audio;
 mod auth;
 mod common;
 mod rfid;
 mod server;
-mod speech;
-mod spiffs;
 mod wifi;
 
-use audio::AudioService;
 use auth::AuthService;
 use common::SystemMessage;
-use esp_idf_hal::{cpu::Core, delay, gpio::PinDriver, peripherals};
+use esp_idf_hal::{cpu::Core, gpio::PinDriver, peripherals};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs, ota::EspOta, timer::EspTaskTimerService};
-use esp_idf_sys::{printf, sys_delay_ms};
+use esp_idf_sys::printf;
 use log::{error, info, warn};
 use rfid::RfidService;
 use server::HttpServer;
-use speech::SpeechService;
-use spiffs::Spiffs;
 use std::{error::Error, ffi::CString, time::Duration};
 use tokio::{sync::mpsc, time::sleep};
 use wifi::WifiConnection;
+use esp_idf_hal::gpio::Gpio19;
 
 fn main() {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -51,37 +46,34 @@ fn main() {
     esp_idf_hal::reset::restart();
 }
 
-// #[no_mangle]
-// pub extern "C" fn esp_task_wdt_isr_user_handler() {
-//     // println!("#### Watchdog triggered! Restarting...");
+#[no_mangle]
+pub extern "C" fn esp_task_wdt_isr_user_handler() {
+    // println!("#### Watchdog triggered! Restarting...");
 
-//     unsafe { printf(CString::new("#### Watchdog triggered! Restarting...").unwrap().into_raw()); };
+    unsafe {
+        printf(
+            CString::new("#### Watchdog triggered! Restarting...")
+                .unwrap()
+                .into_raw(),
+        );
+    };
 
-//     // unsafe { sys_delay_ms(5000) };
+    // unsafe { sys_delay_ms(5000) };
 
-//     // esp_idf_svc::hal::reset::restart();
-// }
+    // esp_idf_svc::hal::reset::restart();
+}
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
     info!("Starting async_main.");
 
     let (message_bus_tx, mut message_bus_rx) = mpsc::channel::<SystemMessage>(10);
 
-    let mut door = unsafe { PinDriver::output(esp_idf_hal::gpio::Gpio43::new()).unwrap() };
+    let mut door = unsafe { PinDriver::output(esp_idf_hal::gpio::Gpio19::new()).unwrap() };
     door.set_high().unwrap();
 
-    Spiffs::init()?;
+    // Spiffs::init()?;
 
     let mut http_server = HttpServer::new(message_bus_tx.clone());
-
-    AudioService::new();
-
-    let speech_service = SpeechService::new();
-
-    let ready_msg = Spiffs::read_string("ready.txt".to_string())
-        .unwrap_or_else(|err| "Ready message not found".to_string());
-
-    speech_service.speak(ready_msg);
 
     let rfid_service = RfidService::new(message_bus_tx.clone());
 
@@ -112,12 +104,12 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
             if let Some(message) = message_bus_rx.recv().await {
                 match message {
                     SystemMessage::Speak(str) => {
-                        speech_service.speak(str);
+                        // speech_service.speak(str);
                     }
                     SystemMessage::WifiConnected() => {
                         http_server.start().unwrap();
 
-                        speech_service.speak("Connected".to_string());
+                        // speech_service.speak("Connected".to_string());
                     }
                     SystemMessage::OnCard(code) => {
                         println!("==== Code: {:?}", code);
@@ -130,7 +122,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
                         println!("==== Name: {:?}", name);
 
                         if granted {
-                            speech_service.speak(format!("Access granted {}.", name));
+                            // speech_service.speak(format!("Access granted {}.", name));
 
                             door.set_low().unwrap();
 
@@ -138,7 +130,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
                             door.set_high().unwrap();
                         } else {
-                            speech_service.speak(format!("Access denied {}.", code));
+                            // speech_service.speak(format!("Access denied {}.", code));
                         }
                     }
                     SystemMessage::OnOtaBuffer(arc) => {

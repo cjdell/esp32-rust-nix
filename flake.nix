@@ -18,6 +18,8 @@
         pkgs.cmake
         pkgs.tio
         pkgs.mkspiffs
+        pkgs.espflash
+        pkgs.openssl
       ];
     in
     {

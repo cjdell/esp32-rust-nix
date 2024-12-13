@@ -1,8 +1,4 @@
-use crate::{
-    audio,
-    common::{self, SystemMessage},
-    spiffs::Spiffs,
-};
+use crate::common::{self, SystemMessage};
 use embedded_svc::http::Headers;
 use esp_idf_hal::io::{Read, Write};
 use esp_idf_svc::http::{server::EspHttpServer, Method};
@@ -105,78 +101,43 @@ impl HttpServer {
             Ok(())
         })?;
 
-        server.fn_handler("/read-file", Method::Get, |req| {
-            let file_name = req.uri().split("?name=").nth(1).unwrap().to_string();
+        // server.fn_handler("/read-file", Method::Get, |req| {
+        //     let file_name = req.uri().split("?name=").nth(1).unwrap().to_string();
 
-            let contents = Spiffs::read_string(file_name).unwrap();
+        //     let contents = Spiffs::read_string(file_name).unwrap();
 
-            req.into_ok_response()?
-                .write_all(contents.as_bytes())
-                .map(|_| ())
-        })?;
+        //     req.into_ok_response()?
+        //         .write_all(contents.as_bytes())
+        //         .map(|_| ())
+        // })?;
 
-        server.fn_handler::<anyhow::Error, _>("/write-file", Method::Post, move |mut req| {
-            let file_name = req.uri().split("?name=").nth(1).unwrap().to_string();
+        // server.fn_handler::<anyhow::Error, _>("/write-file", Method::Post, move |mut req| {
+        //     let file_name = req.uri().split("?name=").nth(1).unwrap().to_string();
 
-            let len = req.content_len().unwrap_or(0) as usize;
+        //     let len = req.content_len().unwrap_or(0) as usize;
 
-            if len > MAX_LEN {
-                req.into_status_response(413)?
-                    .write_all("Request too big".as_bytes())?;
-                return Ok(());
-            }
+        //     if len > MAX_LEN {
+        //         req.into_status_response(413)?
+        //             .write_all("Request too big".as_bytes())?;
+        //         return Ok(());
+        //     }
 
-            let mut buf = vec![0; len];
-            req.read_exact(&mut buf)?;
+        //     let mut buf = vec![0; len];
+        //     req.read_exact(&mut buf)?;
 
-            let mut resp = req.into_ok_response()?;
+        //     let mut resp = req.into_ok_response()?;
 
-            Spiffs::write_binary(file_name, buf);
+        //     Spiffs::write_binary(file_name, buf);
 
-            call_async!({
-                tx4.send(SystemMessage::Speak("File written.".to_string()))
-                    .await
-            });
+        //     call_async!({
+        //         tx4.send(SystemMessage::Speak("File written.".to_string()))
+        //             .await
+        //     });
 
-            resp.write_all(format!("Done {}", len).as_bytes())?;
+        //     resp.write_all(format!("Done {}", len).as_bytes())?;
 
-            Ok(())
-        })?;
-
-        // ffmpeg -i denybeep2.mp3 -ar 16000 -ac 1 -sample_fmt s16 spiffs/denied.wav
-
-        server.fn_handler("/play", Method::Get, move |req| {
-            let file_name = req.uri().split("?name=").nth(1).unwrap().to_string();
-
-            let contents = Spiffs::read_binary(&file_name).unwrap();
-
-            let mut file = fs::File::open(format!("/spiffs/{}", &file_name)).unwrap();
-
-            let file_length = file.metadata().unwrap().len();
-
-            println!("file_length: {:?}", file_length);
-
-            loop {
-                let mut buf = [0u8; 256];
-                let bytes_read = file.read(&mut buf).unwrap();
-
-                println!("bytes_read: {:?}", bytes_read);
-
-                if bytes_read == 0 {
-                    break;
-                }
-
-                let c_buffer = contents.as_ptr() as *mut c_void;
-
-                unsafe {
-                    xRingbufferSend(audio::RING_BUF, c_buffer, contents.len(), common::MAX_DELAY);
-                };
-            }
-
-            req.into_ok_response()?
-                .write_all("OK".as_bytes())
-                .map(|_| ())
-        })?;
+        //     Ok(())
+        // })?;
 
         // Keeps the server running in the background...
         core::mem::forget(server);
